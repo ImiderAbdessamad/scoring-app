@@ -1,0 +1,189 @@
+# Contexte = racine WFB (extracteur V6 + backend + frontend).
+name: wafabail
+
+x-backend-env: &backend-env
+  MINIO_ENDPOINT: minio:9000
+  MINIO_PUBLIC_ENDPOINT: localhost:9000
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin
+  MINIO_BUCKET: wafabail-dossiers
+  MINIO_SECURE: "false"
+  DOSSIERS_STORE_PATH: /data/dossiers.json
+  FILES_DIR: /data/files
+  STORAGE_BACKEND: minio
+  KAFKA_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_TOPIC_DOSSIERS: wafabail.dossiers.created
+  KAFKA_TOPIC_SCORING: wafabail.scoring.events
+  TESSERACT_CMD: /usr/bin/tesseract
+  WFB_V6_EXTRACTOR: /app/financial_pdf_extractor-V6_corrected.py
+  CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173
+  OLLAMA_URL: https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com
+  RCC_OLLAMA_URL: https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com
+  RCC_VISION_MODEL: "hf.co/unsloth/GLM-4.6V-Flash-GGUF:Q4_K_M"
+  RCC_OCR_MODEL: glm-ocr:q8_0
+  RCC_VERIFY_MODEL: qwen3-vl:30b
+  RCC_MAPPER_MODEL: qwen3.5:9b
+  RCC_COPILOT_MODEL: qwen3.5:9b
+  RCC_ADJUDICATOR_MODEL: gemma4:latest
+  RCC_USE_GLM_VERIFICATION: "true"
+  RCC_USE_REASONING_MAPPER: "true"
+  RCC_USE_ADJUDICATOR: "true"
+  RCC_REQUEST_TIMEOUT_SECONDS: "600"
+  PVC_API_KEY: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: wafabail-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-17T19-35-25Z
+    container_name: wafabail-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do
+          echo "Attente MinIO…"
+          sleep 2
+        done
+        mc mb -p local/wafabail-dossiers || true
+        mc anonymous set download local/wafabail-dossiers || true
+        echo "Bucket wafabail-dossiers prêt"
+        exit 0
+    restart: "no"
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: wafabail-kafka
+    hostname: kafka
+    ports:
+      - "9094:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: Mk3OEYBSD34fcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: wafabail-backend:local
+    container_name: wafabail-api
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+    ports:
+      - "8000:8000"
+    volumes:
+      - api_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 25s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+        VITE_USE_MOCK: "false"
+    image: wafabail-frontend:local
+    container_name: wafabail-frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  dossier-worker:
+    image: wafabail-backend:local
+    container_name: wafabail-dossier-worker
+    command: ["python", "-u", "worker/dossier_worker.py"]
+    depends_on:
+      api:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      KAFKA_CONSUMER_GROUP: wafabail-dossier-worker
+    restart: unless-stopped
+
+  scoring-worker:
+    image: wafabail-backend:local
+    container_name: wafabail-scoring-worker
+    command: ["python", "-u", "worker/scoring_worker.py"]
+    depends_on:
+      api:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      KAFKA_CONSUMER_GROUP: wafabail-scoring-worker
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+  api_data:
+  kafka_data:
