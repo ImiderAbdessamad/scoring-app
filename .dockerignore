@@ -13,3 +13,5 @@ frontend/.env
 backend.zip
 *.md
 !financial_pdf_extractor-V6_corrected.py
+**/coverage
+**/*.log

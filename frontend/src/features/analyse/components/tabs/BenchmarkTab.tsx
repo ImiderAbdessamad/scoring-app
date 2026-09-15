@@ -10,6 +10,16 @@ type Props = {
 }
 
 export function BenchmarkTab({ benchmark }: Props) {
+  if (benchmark.status === 'NO_BENCHMARK' || benchmark.sampleSize == null) {
+    return (
+      <Card delay={0.05} className="p-5">
+        <div className="text-[13px] font-bold text-slate-900">Benchmark sectoriel</div>
+        <p className="m-0 mt-2 text-[13px] text-wb-muted">
+          Référentiel sectoriel non disponible pour ce secteur.
+        </p>
+      </Card>
+    )
+  }
   return (
     <div className="flex flex-col gap-4">
       <Card delay={0.05} className="p-5">
@@ -20,9 +30,14 @@ export function BenchmarkTab({ benchmark }: Props) {
             </span>
             <div>
               <div className="text-[13px] font-bold text-slate-900">
-                Secteur {benchmark.sectorLabel} · {benchmark.sampleSize} dossiers
+                Secteur {benchmark.sectorLabel} · {benchmark.sampleSize ?? '—'} dossiers
               </div>
-              <div className="text-[11.5px] text-wb-faint">{benchmark.caption}</div>
+              <div className="text-[11.5px] text-wb-faint">
+                {benchmark.caption}
+                {benchmark.meta?.source ? ` · Source ${benchmark.meta.source}` : ''}
+                {benchmark.meta?.year ? ` · ${benchmark.meta.year}` : ''}
+                {benchmark.meta?.version ? ` · ${benchmark.meta.version}` : ''}
+              </div>
             </div>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] px-3 py-1.5 text-[12px] font-bold text-[#15803D]">

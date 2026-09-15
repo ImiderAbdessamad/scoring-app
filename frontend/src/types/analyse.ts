@@ -59,7 +59,7 @@ export interface DocumentItem {
   id: string
   name: string
   meta: string
-  confidence: number
+  confidence: number | null
   uploadName?: string
 }
 
@@ -73,7 +73,7 @@ export interface ExtractedField {
   label: string
   value: string
   source: string
-  confidence: number
+  confidence: number | null
 }
 
 export interface DocumentExtraction {
@@ -114,7 +114,13 @@ export interface TrendYear {
 
 export interface ScoringBlock {
   score: number
-  scoreRaw?: number
+  scoreRaw?: number | null
+  scoreStatus?: ScoreStatus
+  financialScore?: number | null
+  behavioralScore?: number | null
+  sectorScore?: number | null
+  partialScore?: number | null
+  finalScore?: number | null
   classe?: string
   recommendation: string
   riskLabel: string
@@ -130,6 +136,28 @@ export interface ScoringBlock {
   trend: TrendYear[]
   trendCaption: string
   attention: ScoringAttention
+}
+
+export type ScoreStatus = 'NOT_CALCULABLE' | 'PARTIAL' | 'FINAL'
+
+export interface DecisionEligibility {
+  financial_analysis_ready: boolean
+  behavioral_analysis_ready: boolean
+  sector_analysis_ready: boolean
+  bam_checked: boolean
+  bam_clear: boolean | null
+  incidents_checked: boolean
+  incidents_clear: boolean | null
+  mandatory_documents_ready: boolean
+  quality_gate_passed: boolean
+  analysis_stale: boolean
+  score_status: ScoreStatus
+  eligible_for_automatic_recommendation: boolean
+  eligible_for_approval: boolean
+  eligible_for_reserve: boolean
+  eligible_for_rejection: boolean
+  blocking_reasons: string[]
+  warnings: string[]
 }
 
 export interface RatioItem {
@@ -228,7 +256,9 @@ export interface BehaviourSignal {
 }
 
 export interface BehaviourBlock {
-  score: number
+  score: number | null
+  status?: string
+  available?: boolean
   profileLabel: string
   summary: string
   metrics: BehaviourMetric[]
@@ -257,11 +287,19 @@ export interface ComparableCase {
 
 export interface BenchmarkBlock {
   sectorLabel: string
-  sampleSize: number
+  sampleSize: number | null
+  status?: string
   caption: string
   rows: BenchmarkRow[]
   aboveMedianLabel: string
   comparables: ComparableCase[]
+  meta?: {
+    year?: number
+    source?: string
+    sample_size?: number
+    version?: string
+    sector_code?: string
+  }
 }
 
 export interface MemoSection {
@@ -435,6 +473,113 @@ export interface FinancialStatements {
   esg?: FinancialStatementRow[]
 }
 
+export type SectorAnalysisStatus =
+  | 'AVAILABLE'
+  | 'PARTIAL'
+  | 'UNAVAILABLE'
+  | 'MAPPING_REVIEW_REQUIRED'
+  | 'UNMAPPED'
+  | 'NO_DATA'
+  | 'STALE'
+  | 'ERROR'
+
+export type SectorDataFreshness = 'FRESH' | 'STALE' | 'VERY_STALE' | 'UNAVAILABLE' | 'REFRESHING' | 'ERROR'
+
+export interface SectorSeriesPoint {
+  year: number
+  quarter?: number | null
+  value: number | null
+  unit: string
+  growthYoy?: number | null
+}
+
+export interface CompanyAnnualPoint {
+  year: number
+  va: number | null
+  ca?: number | null
+  unit: string
+  vaUsable: boolean
+  caUsable?: boolean
+}
+
+export interface NormalizedSectorPoint {
+  year: number
+  companyIndex: number | null
+  sectorIndex: number | null
+}
+
+export interface GrowthComparisonPoint {
+  year: number
+  companyGrowth: number | null
+  sectorGrowth: number | null
+  gapPp: number | null
+  companyAvailable: boolean
+}
+
+export interface SectorComparableIndicator {
+  code: string
+  label: string
+  companyValue: number | null
+  sectorValue: number | null
+  unit: string
+  gap?: number | null
+  comparable: boolean
+  reason?: string
+  source?: string
+}
+
+export interface SectorAnalysisData {
+  status: SectorAnalysisStatus
+  sector: {
+    rawActivity?: string | null
+    code?: string | null
+    label?: string | null
+    mappingConfidence?: number | null
+    mappingStatus?: 'MATCHED' | 'REVIEW_REQUIRED' | 'UNMATCHED'
+    mappingType?: string | null
+    validated?: boolean
+  }
+  dataFreshness: {
+    status: SectorDataFreshness
+    lastSyncAt?: string | null
+    latestObservationPeriod?: string | null
+    source?: string
+    datasetVersions?: Array<{ datasetId?: string; sha256?: string | null }>
+    cached?: boolean
+  }
+  headline: {
+    latestSectorVa: number | null
+    latestYear: number | null
+    latestQuarterlyPeriod?: string | null
+    latestUnit?: string
+    nominalGrowthYoy: number | null
+    realGrowthYoy: number | null
+    cagr3y: number | null
+  }
+  sectorAnnualCurrent: SectorSeriesPoint[]
+  sectorAnnualReal: SectorSeriesPoint[]
+  sectorQuarterly: SectorSeriesPoint[]
+  companyAnnual: CompanyAnnualPoint[]
+  normalizedComparison: NormalizedSectorPoint[]
+  growthComparison: GrowthComparisonPoint[]
+  comparableIndicators: SectorComparableIndicator[]
+  summary?: string | null
+  warnings: string[]
+  insights?: Array<{ code: string; severity?: string; text: string }>
+  momentum?: {
+    trend?: string | null
+    latestRealGrowth?: number | null
+    previousRealGrowth?: number | null
+  }
+  scoring: {
+    status: 'NOT_CALIBRATED' | 'AVAILABLE' | 'INSUFFICIENT_DATA'
+    includedInFinalScore: boolean
+    score: number | null
+    note?: string
+  }
+  realGrowthNote?: string
+}
+
 export interface AnalyseWorkspace {
   header: AnalyseHeader
   pipeline: PipelineData
@@ -445,6 +590,7 @@ export interface AnalyseWorkspace {
   factorielle: FactorAxis[]
   yearLabels?: [string, string, string] | string[]
   comportement: BehaviourBlock
+  sectorAnalysis?: SectorAnalysisData | null
   benchmark: BenchmarkBlock
   memo: MemoBlock
   copilot: CopilotBlock

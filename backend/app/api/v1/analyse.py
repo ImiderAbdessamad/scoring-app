@@ -63,7 +63,10 @@ def _download_pdf(meta) -> bytes:
     return data
 
 
-def _pick_liasses(record) -> tuple[bytes, str, list[tuple[bytes, str]]]:
+def _pick_liasses(record) -> tuple[AnalysisDocumentRef, list[AnalysisDocumentRef]]:
+    from app.services.analyse_job_store import AnalysisDocumentRef
+    from app.services.file_validation import sha256_bytes
+
     files = list(record.files)
     ranked = []
     for meta in files:
@@ -88,22 +91,39 @@ def _pick_liasses(record) -> tuple[bytes, str, list[tuple[bytes, str]]]:
         )
     ranked.sort(key=lambda item: -item[0])
     chosen = ranked[0][1]
-    extras: list[tuple[bytes, str]] = []
+    extras: list[AnalysisDocumentRef] = []
     for _, meta in ranked[1:]:
         name = (meta.name or "").lower()
         if "liasse" in name or "bilan" in name or "cpc" in name:
-            extras.append((_download_pdf(meta), meta.name))
+            extras.append(
+                AnalysisDocumentRef(
+                    document_id=meta.objectKey,
+                    object_key=meta.objectKey,
+                    filename=meta.name,
+                    sha256=getattr(meta, "sha256", None),
+                )
+            )
         if len(extras) >= 2:
             break
-    return _download_pdf(chosen), chosen.name, extras
+    primary = AnalysisDocumentRef(
+        document_id=chosen.objectKey,
+        object_key=chosen.objectKey,
+        filename=chosen.name,
+        sha256=getattr(chosen, "sha256", None),
+    )
+    return primary, extras
 
 
 def _persist_result(dossier_id: str, result: ScoringAnalysisResult) -> None:
     record = dossier_store.get_by_id(dossier_id)
     if record is None:
         return
-    score_raw = float(result.score_raw if result.score_raw is not None else result.decision.get("score") or 0)
-    score = int(round(score_raw))
+    decision = result.decision or {}
+    score_status = decision.get("score_status") or "PARTIAL"
+    score_raw = decision.get("final_score") if score_status == "FINAL" else decision.get("partial_score")
+    if score_raw is None:
+        score_raw = result.score_raw
+    score = int(round(float(score_raw))) if score_status == "FINAL" and score_raw is not None else 0
     job = job_store.get_for_dossier(dossier_id)
     ready = result.readiness.ready_for_automatic_scoring
     if record.status == "analyzing":
@@ -126,6 +146,59 @@ def _persist_result(dossier_id: str, result: ScoringAnalysisResult) -> None:
     if patch:
         dossier_store.update_analyse(dossier_id, **patch)
     workspace = build_workspace(snapshot, result)
+    try:
+        import hashlib
+        import json
+
+        from app.core.config import settings
+        from app.db.repositories import analysis_run_repository
+        from app.services.workspace_builder import analysis_source_fingerprint
+
+        audit = json.dumps(result.model_dump(mode="json"), ensure_ascii=False, default=str)
+        digest = hashlib.sha256(audit.encode("utf-8")).hexdigest()
+        object_key = f"audit/{dossier_id}/{job.job_id if job else 'run'}/v6_full_audit.json"
+        try:
+            from app.services import minio_storage
+
+            minio_storage.upload_file(
+                dossier_id=dossier_id,
+                category="audit",
+                filename=f"{job.job_id if job else 'run'}-v6_full_audit.json",
+                data=__import__("io").BytesIO(audit.encode("utf-8")),
+                length=len(audit.encode("utf-8")),
+                content_type="application/json",
+            )
+        except Exception:
+            object_key = None
+        run = analysis_run_repository.create(
+            dossier_id=dossier_id,
+            job_id=job.job_id if job else None,
+            extractor_version="v6",
+            scoring_policy_version=settings.scoring_policy_version,
+            analysis_fingerprint=analysis_source_fingerprint(snapshot),
+            score_status=score_status,
+            financial_score=decision.get("financial_score"),
+            behavioral_score=decision.get("behavioral_score"),
+            sector_score=decision.get("sector_score"),
+            partial_score=decision.get("partial_score"),
+            final_score=decision.get("final_score"),
+            quality_json=json.dumps(result.quality.model_dump(), default=str),
+            readiness_json=json.dumps(result.readiness.model_dump(), default=str),
+            scoring_view_json=json.dumps(workspace.get("scoring") or {}, default=str),
+            full_audit_object_key=object_key,
+            full_audit_sha256=digest,
+        )
+        try:
+            from app.services.sector_analysis_service import sector_analysis_service
+
+            sector_payload = sector_analysis_service.analyze(
+                record=snapshot, result=result, persist_run_id=run.id
+            )
+            workspace["sectorAnalysis"] = sector_payload.model_dump(mode="json")
+        except Exception:
+            logger.exception("Snapshot analyse sectorielle impossible")
+    except Exception:
+        logger.exception("Persistance AnalysisRun impossible")
     dossier_store.update_analyse(
         dossier_id,
         analyse_job_id=job.job_id if job else None,
@@ -206,13 +279,13 @@ async def start_analyse_job(
             filename=existing.filename,
         )
 
-    pdf_bytes, filename, extra_pdfs = _pick_liasses(record)
+    primary, extras = _pick_liasses(record)
     job = job_store.create(
         dossier_id=dossier_id,
-        pdf_bytes=pdf_bytes,
-        filename=filename,
+        filename=primary.filename,
         max_pages=max_pages,
-        extra_pdfs=extra_pdfs,
+        primary_document=primary,
+        extra_documents=extras,
     )
     previous = record.status
     dossier_store.update_analyse(
@@ -221,13 +294,15 @@ async def start_analyse_job(
         analyse_status="processing",
         status="analyzing" if previous in {"pending", "ready", "analyzing"} else previous,
     )
-    background_tasks.add_task(_run_job_sequential, job.job_id)
+    from app.jobs.factory import get_job_dispatcher
+
+    await get_job_dispatcher(_run_job_sequential).dispatch_analysis(job.job_id)
     await asyncio.to_thread(
         kafka_publisher.publish_scoring_event,
         "scoring.job.queued",
         job_id=job.job_id,
         dossier_id=dossier_id,
-        filename=filename,
+        filename=primary.filename,
         company=record.name,
         sector=record.sector,
     )
@@ -237,7 +312,7 @@ async def start_analyse_job(
         status="queued",
         stream_url=f"/api/v1/analyse/jobs/{job.job_id}/stream",
         result_url=f"/api/v1/analyse/jobs/{job.job_id}/result",
-        filename=filename,
+        filename=primary.filename,
     )
 
 
@@ -265,6 +340,16 @@ def get_analyse_state(dossier_id: str) -> AnalyseStateResponse:
         error = job.error
     if job and job.status == "completed" and job.result is not None and not record.analyse:
         workspace = build_workspace(record, job.result)
+    try:
+        from app.services.sector_analysis_service import sector_analysis_service
+
+        live_result = job.result if job and getattr(job, "result", None) is not None else None
+        workspace["sectorAnalysis"] = sector_analysis_service.analyze(
+            record=record,
+            result=live_result,
+        ).model_dump(mode="json")
+    except Exception:
+        logger.exception("Analyse sectorielle live impossible")
     return AnalyseStateResponse(
         dossier_id=dossier_id,
         job=progress,

@@ -1,7 +1,7 @@
 """Projection extracteur V6 → contrat API Scoring (champs RCC + identity + CAF)."""
 from __future__ import annotations
 
-from typing import Any
+from app.domain.period_math import safe_sum_period_fields
 
 from app.schemas.analyse import (
     RCC_ELEMENTS,
@@ -69,6 +69,8 @@ _CANONICAL_KEYS: dict[str, list[str]] = {
     "RESULTAT_EXPLOITATION": ["resultat_exploitation"],
     "DOTATIONS_EXPLOITATION": ["dotations_exploitation"],
     "CAF": ["caf"],
+    "VALEUR_AJOUTEE": ["valeur_ajoutee"],
+    "EBE": ["ebe"],
 }
 
 _CONTROL_MAP: list[tuple[str, str, str, list[str]]] = [
@@ -245,33 +247,60 @@ def _lookup_entry(canonical: dict[str, Any], keys: list[str]) -> tuple[str | Non
     return None, None
 
 
-def _chiffre_affaires(canonical: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+def _chiffre_affaires(canonical: dict[str, Any]) -> tuple[ExtractedField | None, str]:
     key, entry = _lookup_entry(canonical, ["chiffre_affaires"])
     if entry:
-        value = _period_field(entry, "current").usable_value
-        if value is not None:
-            return entry, "chiffre_affaires"
+        current = _period_field(entry, "current")
+        if current.usable_value is not None:
+            return None, "chiffre_affaires"
     ventes_m = _period_field(canonical.get("ventes_marchandises"), "current")
     ventes_s = _period_field(canonical.get("ventes_biens_services"), "current")
-    if ventes_m.usable_value is None and ventes_s.usable_value is None:
-        return entry, key or "chiffre_affaires"
-    current = None
-    if ventes_m.usable_value is not None or ventes_s.usable_value is not None:
-        current = (ventes_m.usable_value or 0.0) + (ventes_s.usable_value or 0.0)
     prev_m = _period_field(canonical.get("ventes_marchandises"), "previous")
     prev_s = _period_field(canonical.get("ventes_biens_services"), "previous")
-    previous = None
-    if prev_m.usable_value is not None or prev_s.usable_value is not None:
-        previous = (prev_m.usable_value or 0.0) + (prev_s.usable_value or 0.0)
-    fake = dict(canonical.get("chiffre_affaires") or {})
-    fake["current"] = current
-    fake["previous"] = previous
-    fake["usable_current"] = current
-    fake["usable_previous"] = previous
-    fake["period_status"] = {"current": "observed", "previous": "observed" if previous is not None else "missing"}
-    fake["label"] = "Ventes marchandises + ventes biens et services"
-    fake["section"] = "cpc"
-    return fake, "ventes_sum"
+    current = safe_sum_period_fields(
+        [ventes_m, ventes_s],
+        accounting_status="derived_from_sales_components",
+    )
+    previous = safe_sum_period_fields(
+        [prev_m, prev_s],
+        accounting_status="derived_from_sales_components",
+    )
+    field = ExtractedField(
+        number=3,
+        code="CHIFFRE_AFFAIRES",
+        label="Chiffre d'affaires",
+        source="CPC",
+        current=current,
+        previous=previous,
+        note="Somme des lignes de ventes",
+    )
+    return field, "ventes_sum"
+
+
+def _dettes_bancaires_ct(canonical: dict[str, Any]) -> ExtractedField | None:
+    # TODO_WAFABAIL_POLICY_VALIDATION : agrégat credits_tresorerie + credits_escompte uniquement.
+    # banques_soldes_crediteurs n'est pas inclus (définition Excel non validée).
+    treso = canonical.get("credits_tresorerie")
+    escompte = canonical.get("credits_escompte")
+    if not treso and not escompte:
+        return None
+    current = safe_sum_period_fields(
+        [_period_field(treso, "current"), _period_field(escompte, "current")],
+        accounting_status="derived_from_short_term_credits",
+    )
+    previous = safe_sum_period_fields(
+        [_period_field(treso, "previous"), _period_field(escompte, "previous")],
+        accounting_status="derived_from_short_term_credits",
+    )
+    return ExtractedField(
+        number=6,
+        code="DETTES_BANCAIRES_CT",
+        label="Dettes bancaires CT",
+        source="Bilan Passif",
+        current=current,
+        previous=previous,
+        note="TODO_WAFABAIL_POLICY_VALIDATION: crédits trésorerie + escompte",
+    )
 
 
 def map_fields(canonical: dict[str, Any]) -> list[ExtractedField]:
@@ -283,8 +312,19 @@ def map_fields(canonical: dict[str, Any]) -> list[ExtractedField]:
         if code == "TYPE_RESULTAT":
             continue
         if code == "CHIFFRE_AFFAIRES":
-            entry, used = _chiffre_affaires(canonical)
+            derived, used = _chiffre_affaires(canonical)
+            if derived is not None:
+                fields.append(derived)
+                continue
             note = "Somme des lignes de ventes" if used == "ventes_sum" else None
+            _, entry = _lookup_entry(canonical, ["chiffre_affaires"])
+        elif code == "DETTES_BANCAIRES_CT":
+            derived_ct = _dettes_bancaires_ct(canonical)
+            if derived_ct is not None:
+                fields.append(derived_ct)
+                continue
+            _, entry = _lookup_entry(canonical, [])
+            note = None
         else:
             _, entry = _lookup_entry(canonical, _CANONICAL_KEYS.get(code, []))
             note = None
@@ -330,6 +370,8 @@ def map_fields(canonical: dict[str, Any]) -> list[ExtractedField]:
         if code in {"DETTES_FINANCIERES", "ENDETTEMENT_TERME", "TRESORERIE_NETTE", "FDR", "BFR"}:
             continue
         if code == "CAF":
+            source = "ESG"
+        if code in {"VALEUR_AJOUTEE", "EBE"}:
             source = "ESG"
         _, entry = _lookup_entry(canonical, _CANONICAL_KEYS.get(code, []))
         current = _period_field(entry, "current")
@@ -450,6 +492,14 @@ def map_controls(
                     if mapped_status == "passed"
                     else f"Écart {difference} (tolérance 0,02)."
                 ),
+                severity=(
+                    "CRITICAL"
+                    if mapped_status == "failed" and period != "previous"
+                    else "WARNING"
+                    if mapped_status == "failed"
+                    else "INFO"
+                ),
+                affects_scoring=mapped_status == "failed" and period != "previous",
             )
         )
     controls.sort(key=lambda c: (c.period != "current", c.status != "failed", c.label))

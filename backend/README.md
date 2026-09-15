@@ -14,10 +14,12 @@ Documentation de **toutes les routes** du backend FastAPI : rôle, entrée, sort
 cd WFB\backend
 .\.venv\Scripts\activate
 copy .env.example .env   # une seule fois
+alembic upgrade head
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Sans Docker : `STORAGE_BACKEND=local`, `KAFKA_ENABLED=false`. Les PDF sont dans `data/files/`, les dossiers dans `data/dossiers.json`.
+Sans Docker : `STORAGE_BACKEND=local`, `KAFKA_ENABLED=false`, `JOB_DISPATCHER=local`.
+Les PDF sont dans `data/files/` (MinIO optionnel). Les dossiers sont en SQLite (`data/wafabail.db`) avec dual-write JSON (`data/dossiers.json`).
 
 L’extraction scoring et le copilote appellent **Ollama** (`RCC_OLLAMA_URL` dans `.env`).
 
@@ -28,6 +30,8 @@ L’extraction scoring et le copilote appellent **Ollama** (`RCC_OLLAMA_URL` dan
 | Méthode | URL | Rôle |
 |---|---|---|
 | `GET` | `/health` | Santé du serveur |
+| `GET` | `/health/live` | Liveness |
+| `GET` | `/health/ready` | Readiness (SQLite / MinIO / extracteur ; Kafka disabled = ok) |
 | `GET` | `/api/v1/dashboard` | KPIs + file d’attente + alertes |
 | `GET` | `/api/v1/dossiers` | Liste des dossiers |
 | `POST` | `/api/v1/dossiers` | Créer un dossier **et lancer l’analyse** |

@@ -42,7 +42,37 @@ def _save(records: list[StoredDossierRecord]) -> None:
     )
 
 
+def _sync_sqlite(record: StoredDossierRecord) -> None:
+    try:
+        from app.db.repositories import dossier_repository
+
+        dossier_repository.create(record)
+    except Exception:
+        return
+
+
+def _sqlite_get(dossier_id: str) -> StoredDossierRecord | None:
+    try:
+        from app.db.repositories import dossier_repository
+
+        return dossier_repository.get(dossier_id)
+    except Exception:
+        return None
+
+
+def _sqlite_list() -> list[StoredDossierRecord] | None:
+    try:
+        from app.db.repositories import dossier_repository
+
+        return dossier_repository.list()
+    except Exception:
+        return None
+
+
 def list_created() -> list[StoredDossierRecord]:
+    sqlite_rows = _sqlite_list()
+    if sqlite_rows:
+        return sqlite_rows
     with _lock:
         return list(_load())
 
@@ -54,9 +84,13 @@ def prepend(record: StoredDossierRecord) -> None:
         records = [record, *[r for r in records if r.id != record.id]]
         _save(records)
         _records = records
+    _sync_sqlite(record)
 
 
 def get_by_id(dossier_id: str) -> StoredDossierRecord | None:
+    found = _sqlite_get(dossier_id)
+    if found is not None:
+        return found
     with _lock:
         for record in _load():
             if record.id == dossier_id:
@@ -99,6 +133,7 @@ def replace_file(
             records[i] = updated
             _save(records)
             _records = records
+            _sync_sqlite(updated)
             return updated
     return None
 
@@ -129,10 +164,15 @@ def update_analyse(dossier_id: str, **patch: object) -> StoredDossierRecord | No
                 mapped["name"] = patch["name"]
             if "sector" in patch:
                 mapped["sector"] = patch["sector"]
+            if "benchmark_sector_code" in patch:
+                mapped["benchmarkSectorCode"] = patch["benchmark_sector_code"]
+            if "sector_normalized" in patch:
+                mapped["sectorNormalized"] = patch["sector_normalized"]
             updated = record.model_copy(update=mapped)
             records[i] = updated
             _save(records)
             _records = records
+            _sync_sqlite(updated)
             return updated
     return None
 
@@ -154,6 +194,7 @@ def update_status(dossier_id: str, status: str) -> StoredDossierRecord | None:
             records[i] = updated
             _save(records)
             _records = records
+            _sync_sqlite(updated)
             return updated
     return None
 

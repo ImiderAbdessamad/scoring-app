@@ -1,9 +1,15 @@
 from fastapi import APIRouter
 
-from app.api.v1 import analyse, dashboard, dossiers, partners
+from app.api.v1 import analyse, dashboard, dossiers, partners, rcc, sector_data, sectors
 
 api_router = APIRouter()
 api_router.include_router(dashboard.router, tags=["dashboard"])
 api_router.include_router(dossiers.router, tags=["dossiers"])
 api_router.include_router(analyse.router)
 api_router.include_router(partners.router)
+api_router.include_router(sector_data.router)
+api_router.include_router(sectors.router)
+api_router.include_router(sectors.dossier_router)
+api_router.include_router(sector_data.dossier_sector_router)
+api_router.include_router(rcc.auth_router)
+api_router.include_router(rcc.router)

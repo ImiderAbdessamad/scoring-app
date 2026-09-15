@@ -1,0 +1,33 @@
+{
+  "provider": "HCP_OPEN_DATA",
+  "datasets": [
+    {
+      "id": "data_12_29",
+      "status": "FRESH",
+      "resource": "Valeurs ajoutées à prix courants — annuelle — Base 2014",
+      "sha256": "ed17f554873784b04c22024651d04d76383e1449ab1adb58c9e4989ef4a7072b",
+      "observations": 292
+    },
+    {
+      "id": "data_12_28",
+      "status": "FRESH",
+      "resource": "Valeurs ajoutées en volume aux prix de l’année précédente chaînés — annuelle — Base 2014",
+      "sha256": "18220a9ec1dd2cdc0bf1449b7e83b304e0bd3a956757714a42c9abb665d09b9f",
+      "observations": 290
+    },
+    {
+      "id": "data_12_41",
+      "status": "FRESH",
+      "resource": "Valeurs ajoutées CVS aux prix courants par branche — trimestrielle — Base 2014",
+      "sha256": "5b06d326b6cefa746e76ae9b625fbb6a14eea610f0dd24974269f257bfa011dc",
+      "observations": 1376
+    },
+    {
+      "id": "data_12_40",
+      "status": "FRESH",
+      "resource": "Valeurs ajoutées CVS en volume / prix chaînés par branche — trimestrielle — Base 2014",
+      "sha256": "15b35b16e72799ee8ca2717a3e3e72d5dc8c4a29553ded55deaf55f7d5009847",
+      "observations": 1376
+    }
+  ]
+}

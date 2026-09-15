@@ -15,14 +15,17 @@ SYSTEM_PROMPT = """Tu es le copilote crédit-bail de Wafabail.
 Tu aides l'analyste sur UN dossier précis, en français, de façon concise et professionnelle.
 
 Règles :
-- Appuie-toi uniquement sur le CONTEXTE fourni (extraction, ratios, score, synthèse).
-- Ne invente pas de chiffres, de ratios ou de pièces absents du contexte.
-- Si une information manque (ex. relevés bancaires), dis-le clairement.
-- Réponds en 4 à 10 phrases maximum, avec des puces si utile.
+- Appuie-toi uniquement sur le CONTEXTE fourni (scoring view, quality, éligibilité, mémo).
+- N'invente pas de chiffres, de ratios, de pièces, de cotation BAM ou d'incidents absents du contexte.
+- Si BAM est UNKNOWN / non vérifiée, dis « cotation BAM non vérifiée ».
+- Si les incidents sont UNKNOWN, dis « incidents bancaires non vérifiés ».
+- Si une analyse sectorielle HCP est fournie, utilise uniquement ces chiffres (VA, croissances, fraîcheur).
+- N'invente pas de médiane sectorielle, de taux de défaut ou de PIB si la métrique est la valeur ajoutée.
+- Si scoring.status = NOT_CALIBRATED, dis que l'analyse sectorielle n'est pas intégrée au score.
+- Ne dis jamais que l'entreprise « surperforme en réel » : la VA entreprise est nominale ; la croissance réelle HCP est une conjoncture distincte.
+- Si un indicateur sectoriel est absent, dis qu'il n'est pas disponible.
 - Une valeur status=suspect n'est pas une valeur confirmée.
-- Ne présente jamais une valeur unusable comme certaine.
-- Si une information est absente, réponds qu'elle n'est pas disponible.
-- Tu ne modifies jamais le score, le statut, une valeur financière ou le quality gate.
+- Tu ne modifies jamais le score, la décision, une valeur usable ou le quality gate.
 """
 
 
@@ -100,6 +103,21 @@ def build_dossier_brief(record: StoredDossierRecord) -> str:
     files = [f.name for f in record.files]
     if files:
         lines.append("Documents : " + ", ".join(files[:12]))
+    sector = ws.get("sectorAnalysis") or {}
+    if sector:
+        lines.append("Analyse sectorielle :")
+        lines.append(f"- statut : {sector.get('status')}")
+        sec = sector.get("sector") or {}
+        lines.append(f"- secteur : {sec.get('label') or '—'}")
+        fresh = sector.get("dataFreshness") or {}
+        lines.append(f"- source : {fresh.get('source')} fraîcheur={fresh.get('status')}")
+        head = sector.get("headline") or {}
+        lines.append(f"- dernière période VA : {head.get('latestYear')} croissance nominale={head.get('nominalGrowthYoy')} réelle={head.get('realGrowthYoy')}")
+        lines.append(f"- scoring sectoriel : {(sector.get('scoring') or {}).get('status')} inclus={ (sector.get('scoring') or {}).get('includedInFinalScore') }")
+        if sector.get("summary"):
+            lines.append(f"- résumé : {sector.get('summary')}")
+        for warn in (sector.get("warnings") or [])[:4]:
+            lines.append(f"- avertissement : {warn}")
     if not record.analyse:
         lines.append("Note : l'analyse scoring n'a pas encore été exécutée sur ce dossier.")
     return "\n".join(lines)

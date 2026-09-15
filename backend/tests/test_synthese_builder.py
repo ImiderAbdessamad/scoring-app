@@ -41,6 +41,7 @@ def _result() -> ScoringAnalysisResult:
                 ],
             },
             "sectoriel": {
+                "status": "OK",
                 "score": 80,
                 "indicateurs_compares": 5,
                 "comparaisons": [
@@ -71,10 +72,9 @@ def test_synthese_matches_attention_card_shape():
 
     assert any("Croissance solide" in p for p in synthese["pointsForts"])
     assert "+12,6 %" in forts
-    assert "médiane sectorielle" in forts
     assert "autonomie financière à 25 %" in forts
     assert "trésorerie et fonds de roulement positifs" in forts
-    assert "aucun incident" in forts
+    assert "sans signal d'incident" in forts
     assert "4 indicateurs sur 5" in forts
 
     assert any("Rentabilité commerciale" in p for p in synthese["pointsVigilance"])

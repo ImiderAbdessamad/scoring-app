@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/Card'
+import type { DecisionEligibility } from '@/types/analyse'
 
 type Quality = {
   observed_current_count?: number
@@ -53,12 +54,20 @@ export function QualityTab({
   quality,
   readiness,
   controls,
+  eligibility,
 }: {
   quality?: Quality | null
   readiness?: Readiness | null
   controls?: Control[] | null
+  eligibility?: DecisionEligibility | null
 }) {
   const ready = Boolean(readiness?.ready_for_automatic_scoring)
+  const row = (label: string, value: string) => (
+    <div className="flex items-center justify-between border-t border-[#F1F2F4] py-1.5 text-[12.5px]">
+      <span className="text-wb-muted">{label}</span>
+      <span className="font-semibold text-slate-800">{value}</span>
+    </div>
+  )
   return (
     <div className="flex flex-col gap-3">
       <Card className="p-5">
@@ -85,6 +94,25 @@ export function QualityTab({
           </div>
         ))}
       </Card>
+      {eligibility ? (
+        <Card className="p-5">
+          <div className="mb-2 text-[13px] font-bold text-slate-900">Préparation à la décision</div>
+          {row('Analyse financière', eligibility.financial_analysis_ready ? 'Prête' : 'À revoir')}
+          {row('Comportement bancaire', eligibility.behavioral_analysis_ready ? 'Disponible' : 'Manquant')}
+          {row('Analyse sectorielle', eligibility.sector_analysis_ready ? 'Disponible' : 'Manquant')}
+          {row(
+            'BAM',
+            eligibility.bam_clear === false ? 'Bloquante' : eligibility.bam_checked ? 'Vérifiée' : 'Non vérifiée',
+          )}
+          {row(
+            'Incidents',
+            eligibility.incidents_clear === false ? 'Présents' : eligibility.incidents_checked ? 'Clear' : 'Non vérifiés',
+          )}
+          {row('Documents', eligibility.mandatory_documents_ready ? 'Complets' : 'Incomplets')}
+          {row('Analyse', eligibility.analysis_stale ? 'Obsolète' : 'À jour')}
+          {row('Décision', eligibility.eligible_for_approval ? 'Éligible' : 'Non éligible')}
+        </Card>
+      ) : null}
       <Card className="overflow-hidden p-0">
         <div className="border-b border-wb-line px-5 py-3 text-[13px] font-bold">Contrôles N / N-1</div>
         {(controls || []).length === 0 && (

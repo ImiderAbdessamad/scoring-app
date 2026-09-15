@@ -38,7 +38,7 @@ export function ExtractionPanel({ extraction, document }: Props) {
                   {field.label}
                 </span>
                 <span className="text-[10px] font-bold tabular-nums text-wb-faint">
-                  {field.confidence}%
+                  {field.confidence == null ? '—' : `${field.confidence}%`}
                 </span>
               </div>
               <div className="mt-1 break-words text-[13.5px] font-bold text-slate-900">{field.value}</div>

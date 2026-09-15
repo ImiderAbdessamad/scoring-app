@@ -22,8 +22,16 @@ class Settings:
         "MINIO_PUBLIC_ENDPOINT",
         os.getenv("MINIO_ENDPOINT", "localhost:9000"),
     )
-    minio_access_key: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-    minio_secret_key: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    minio_access_key: str = os.getenv("MINIO_ACCESS_KEY", "")
+    minio_secret_key: str = os.getenv("MINIO_SECRET_KEY", "")
+    database_url: str = os.getenv(
+        "DATABASE_URL",
+        "sqlite+aiosqlite:///./data/wafabail.db",
+    )
+    job_dispatcher: str = os.getenv("JOB_DISPATCHER", "local").strip().lower()
+    local_job_concurrency: int = int(os.getenv("LOCAL_JOB_CONCURRENCY", "1"))
+    max_upload_size_mb: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
+    scoring_policy_version: str = os.getenv("SCORING_POLICY_VERSION", "WFB-CREDIT-V1")
     minio_bucket: str = os.getenv("MINIO_BUCKET", "wafabail-dossiers")
     minio_secure: bool = os.getenv("MINIO_SECURE", "false").lower() in {
         "1",
@@ -82,11 +90,37 @@ class Settings:
     analyse_job_ttl_minutes: int = int(os.getenv("ANALYSE_JOB_TTL_MINUTES", "180"))
     pvc_api_key: str = os.getenv("PVC_API_KEY", "").strip()
     tesseract_cmd: str = os.getenv("TESSERACT_CMD", "").strip()
+    sector_data_enabled: bool = _flag("SECTOR_DATA_ENABLED", True)
+    sector_data_auto_sync: bool = _flag(
+        "SECTOR_AUTO_REFRESH",
+        _flag("SECTOR_DATA_AUTO_SYNC", True),
+    )
+    sector_data_refresh_hours: int = int(
+        os.getenv("SECTOR_REFRESH_INTERVAL_HOURS", os.getenv("SECTOR_DATA_REFRESH_HOURS", "24"))
+    )
+    sector_metadata_ttl_hours: int = int(os.getenv("SECTOR_METADATA_TTL_HOURS", "6"))
+    sector_analysis_affects_scoring: bool = _flag("SECTOR_ANALYSIS_AFFECTS_SCORING", False)
+    sector_data_provider: str = os.getenv(
+        "SECTOR_PROVIDER", os.getenv("SECTOR_DATA_PROVIDER", "hcp_open_data")
+    ).strip().lower()
+    sector_data_request_timeout_seconds: int = int(
+        os.getenv("SECTOR_DATA_REQUEST_TIMEOUT_SECONDS", "30")
+    )
+    sector_data_max_retries: int = int(os.getenv("SECTOR_DATA_MAX_RETRIES", "3"))
+    sector_data_store_raw_files: bool = _flag("SECTOR_DATA_STORE_RAW_FILES", True)
+    sector_data_max_xlsx_bytes: int = int(os.getenv("SECTOR_DATA_MAX_XLSX_BYTES", str(20 * 1024 * 1024)))
+    hcp_ckan_base_url: str = os.getenv(
+        "DATA_GOV_MA_CKAN_BASE",
+        os.getenv("HCP_CKAN_BASE_URL", "https://data.gov.ma/data/api/3/action"),
+    ).rstrip("/")
+
     cors_origins: list[str] = [
         origin.strip()
         for origin in os.getenv(
             "CORS_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173,"
+            "http://localhost:5174,http://127.0.0.1:5174,"
+            "http://localhost:5175,http://127.0.0.1:5175,"
             "http://localhost:8080,http://127.0.0.1:8080",
         ).split(",")
         if origin.strip()

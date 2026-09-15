@@ -78,22 +78,30 @@ def evaluate_quality(result: ScoringAnalysisResult) -> tuple[ExtractionQuality, 
     )
 
     blocking: list[str] = []
+    historical: list[str] = []
     critical_conflicts = 0
     critical_suspects = 0
     for field in fields:
         if field.code not in _CRITICAL_CODES:
             continue
-        if field.current.status == "conflicting" or (field.previous and field.previous.status == "conflicting"):
+        if field.current.status == "conflicting":
             critical_conflicts += 1
             blocking.append(f"{field.label} en conflit.")
-        if field.current.status == "suspect" or (field.previous and field.previous.status == "suspect"):
+        if field.previous and field.previous.status == "conflicting":
+            historical.append(f"{field.label} N-1 en conflit.")
+        if field.current.status == "suspect":
             critical_suspects += 1
             blocking.append(f"{field.label} suspect.")
+        if field.previous and field.previous.status == "suspect":
+            historical.append(f"{field.label} N-1 suspect.")
         if field.code in {"CAF", "FONDS_PROPRES", "TOTAL_BILAN", "CHIFFRE_AFFAIRES"} and not field.current.usable:
             blocking.append(f"{field.label} non utilisable pour le scoring.")
     for control in result.controls:
-        if control.status == "failed" and control.period in {None, "current"}:
+        failed_critical = control.status == "failed" and getattr(control, "severity", "WARNING") == "CRITICAL"
+        if failed_critical and control.period in {None, "current"} and control.affects_scoring:
             blocking.append(f"Contrôle en écart — {control.label}.")
+        elif control.status == "failed" and control.period == "previous":
+            historical.append(f"Contrôle historique en écart — {control.label}.")
     if available < 6:
         blocking.append("Moins de 6 inputs de scoring utilisables.")
 
@@ -128,5 +136,7 @@ def evaluate_quality(result: ScoringAnalysisResult) -> tuple[ExtractionQuality, 
         critical_suspects=critical_suspects,
         accounting_failures=accounting_failures,
         quality_status=quality_status,  # type: ignore[arg-type]
+        current_period_blockers=unique_block,
+        historical_period_blockers=list(dict.fromkeys(historical)),
     )
     return quality, readiness

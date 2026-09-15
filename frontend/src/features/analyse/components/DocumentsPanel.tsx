@@ -142,7 +142,7 @@ export function DocumentsPanel({
                     {uploading ? 'Envoi en cours…' : doc.meta}
                   </div>
                 </div>
-                {!uploadable && doc.confidence > 0 && (
+                {!uploadable && doc.confidence != null && doc.confidence > 0 && (
                   <span className="flex-none text-[10.5px] font-bold tabular-nums text-wb-faint">
                     {doc.confidence}%
                   </span>

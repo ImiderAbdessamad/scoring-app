@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-JobStatus = Literal["queued", "processing", "completed", "failed"]
+JobStatus = Literal["queued", "processing", "completed", "failed", "cancelled", "interrupted"]
 
 RCC_ELEMENTS: list[tuple[int, str, str, str]] = [
     (1, "ACTIFS_IMMOBILISES", "Actifs immobilisés", "Bilan Actif"),
@@ -41,6 +41,8 @@ SCORING_EXTRA_ELEMENTS: list[tuple[int, str, str, str]] = [
     (28, "FDR", "Fonds de roulement", "Dérivé"),
     (29, "BFR", "Besoin en fonds de roulement", "Dérivé"),
     (30, "CAF", "Capacité d'autofinancement", "Dérivé"),
+    (31, "VALEUR_AJOUTEE", "Valeur ajoutée", "ESG"),
+    (32, "EBE", "Excédent brut d'exploitation", "ESG"),
 ]
 
 
@@ -239,6 +241,8 @@ class AccountingControlView(BaseModel):
     tolerance: Optional[float] = None
     affected_fields: list[str] = Field(default_factory=list)
     message: str = ""
+    severity: Literal["CRITICAL", "WARNING", "INFO"] = "WARNING"
+    affects_scoring: bool = False
 
 
 class ExtractionQuality(BaseModel):
@@ -268,6 +272,8 @@ class ScoringReadiness(BaseModel):
     critical_suspects: int = 0
     accounting_failures: int = 0
     quality_status: Literal["valid", "warning", "review_required", "blocked"] = "review_required"
+    current_period_blockers: list[str] = Field(default_factory=list)
+    historical_period_blockers: list[str] = Field(default_factory=list)
 
 
 class AmountQuality(BaseModel):

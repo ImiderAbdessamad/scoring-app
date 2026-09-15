@@ -119,6 +119,25 @@ def download_bytes(object_key: str) -> bytes:
         response.release_conn()
 
 
+def put_bytes(object_key: str, payload: bytes, *, content_type: str) -> str:
+    if _use_local():
+        path = _local_path(object_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        return object_key
+    ensure_bucket()
+    from io import BytesIO
+
+    get_minio().put_object(
+        settings.minio_bucket,
+        object_key,
+        BytesIO(payload),
+        length=len(payload),
+        content_type=content_type,
+    )
+    return object_key
+
+
 def object_url(object_key: str) -> str:
     if _use_local():
         return f"/files/{quote(object_key)}"

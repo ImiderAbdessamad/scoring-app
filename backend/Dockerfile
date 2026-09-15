@@ -4,12 +4,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TESSERACT_CMD=/usr/bin/tesseract \
-    WFB_V6_EXTRACTOR=/app/financial_pdf_extractor-V6_corrected.py
+    WFB_V6_EXTRACTOR=/app/financial_pdf_extractor-V6_corrected.py \
+    DATABASE_URL=sqlite+aiosqlite:////data/wafabail.db \
+    DOSSIERS_STORE_PATH=/data/dossiers.json \
+    FILES_DIR=/data/files \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        ca-certificates \
         curl \
         tesseract-ocr \
         tesseract-ocr-fra \
@@ -31,7 +36,7 @@ COPY backend/worker /app/worker
 COPY financial_pdf_extractor-V6_corrected.py /app/financial_pdf_extractor-V6_corrected.py
 
 RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p /data /data/files \
+    && mkdir -p /data/files \
     && chown -R appuser:appuser /app /data
 
 USER appuser
@@ -41,5 +46,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=20s --timeout=5s --start-period=25s --retries=5 \
     CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
-# Un seul process : le job store d'analyse est en mémoire.
+# Un seul process uvicorn : le job store d'analyse est en mémoire.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

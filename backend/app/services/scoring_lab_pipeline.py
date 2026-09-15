@@ -774,15 +774,18 @@ def _dec(value: float | None) -> Decimal | None:
 def _ratio_inputs(fields: list[ExtractedField]) -> dict[str, float | None]:
     by_code = {item.code: item for item in fields}
     ca = by_code.get("CHIFFRE_AFFAIRES")
-    achats_rev = _usable(by_code.get("ACHATS_REVENDUS"))
-    achats_con = _usable(by_code.get("ACHATS_CONSOMMES"))
-    achats = None
-    if achats_rev is not None and achats_con is not None:
-        achats = achats_rev + achats_con
-    elif achats_rev is not None:
-        achats = achats_rev
-    elif achats_con is not None:
-        achats = achats_con
+    achats_rev_f = by_code.get("ACHATS_REVENDUS")
+    achats_con_f = by_code.get("ACHATS_CONSOMMES")
+    from app.domain.period_math import safe_sum_period_fields
+    from app.schemas.analyse import PeriodFieldValue
+
+    achats_sum = safe_sum_period_fields(
+        [
+            achats_rev_f.current if achats_rev_f else PeriodFieldValue(status="missing"),
+            achats_con_f.current if achats_con_f else PeriodFieldValue(status="missing"),
+        ]
+    )
+    achats = achats_sum.usable_value if achats_sum.usable else None
     return {
         "fonds_propres": _usable(by_code.get("FONDS_PROPRES")),
         "total_bilan": _usable(by_code.get("TOTAL_BILAN")),
@@ -828,41 +831,50 @@ def _compute_scoring(fields: list[ExtractedField]) -> tuple[dict[str, float | No
 
     axe1 = scoring_engine.score_axe1_from_ratios(raw_ratios)
     axe2 = scoring_engine.score_axe2_behavioral(provided_fields=set())
-    axe3 = scoring_engine.score_axe3_sectoriel(raw_ratios)
+    axe3 = scoring_engine.score_axe3_sectoriel(raw_ratios, sector_medians=None)
 
-    axe1_score = float(axe1["score"])
-    axe3_score = float(axe3["score"])
+    axe1_score = float(axe1["score"]) if axe1.get("score") is not None else None
+    axe3_score = axe3.get("score")
     axe2_score = axe2.get("score")
+    computed = scoring_engine.compute_scores(axe1_score, axe2_score, axe3_score)
+    axe2_note = None
     if axe2_score is None:
-        global_score = round((axe1_score * 0.75 + axe3_score * 0.10) / 0.85, 2)
         axe2_note = "Axe comportemental non noté : relevés bancaires non extraits."
+    if computed["score_status"] == "NOT_CALCULABLE":
+        risk = None
+        grid_classe = None
     else:
-        global_score = round(scoring_engine.compute_global_score(axe1_score, float(axe2_score), axe3_score), 2)
-        axe2_note = None
-
-    grid = scoring_engine.map_score_to_decision(global_score)
-    risk = {
-        "A+": "faible",
-        "A/B+": "faible",
-        "B/B-": "modere",
-        "C": "eleve",
-        "D/F": "critique",
-    }.get(grid["classe"], "modere")
+        risk = {
+            "A+": "faible",
+            "A/B+": "faible",
+            "B/B-": "modere",
+            "C": "eleve",
+            "D/F": "critique",
+        }.get(computed.get("classe") or "", None)
+        grid_classe = computed.get("classe")
+    display_score = computed["final_score"] if computed["score_status"] == "FINAL" else computed["partial_score"]
     decision = {
-        "score": global_score,
-        "score_raw": global_score,
-        "classe": grid["classe"],
-        "decision": grid["decision"],
-        "recommandation": grid["recommandation"],
+        "score": display_score,
+        "score_raw": display_score,
+        "score_status": computed["score_status"],
+        "financial_score": computed["financial_score"],
+        "behavioral_score": computed["behavioral_score"],
+        "sector_score": computed["sector_score"],
+        "partial_score": computed["partial_score"],
+        "final_score": computed["final_score"],
+        "classe": grid_classe,
+        "decision": computed.get("decision_label"),
+        "recommandation": computed.get("algorithmic_recommendation"),
         "risk_level": risk,
-        "blocking_status": None,
+        "blocking_status": "NOT_CHECKED",
         "axe2_note": axe2_note,
-        "provisional": False,
+        "provisional": computed["score_status"] != "FINAL",
+        "missing_axes": computed["missing_axes"],
     }
     axes = {
         "financier": {**axe1, "weight": 0.75},
         "comportemental": {**axe2, "weight": 0.15, "note": axe2_note},
-        "sectoriel": {**axe3, "weight": 0.10},
+        "sectoriel": {**axe3, "weight": 0.10, "status": axe3.get("status") or "NOT_CALIBRATED"},
     }
     return inputs, ratios, axes, decision
 
@@ -878,6 +890,8 @@ _YEAR_SERIES_FIELDS: dict[str, str] = {
     "fdr": "FDR",
     "bfr": "BFR",
     "caf": "CAF",
+    "valeur_ajoutee": "VALEUR_AJOUTEE",
+    "ebe": "EBE",
     "stocks": "STOCKS",
     "clients": "CREANCES_CLIENTS",
     "fournisseurs": "DETTES_FOURNISSEURS",
@@ -954,19 +968,31 @@ def merge_liasse_years(
 ) -> ScoringAnalysisResult:
     """Complète la colonne N-2 (et les trous) à partir d'autres liasses du dossier."""
     by_year: dict[int, dict[str, float | None]] = {}
+    conflicts: list[str] = []
 
-    def ingest(block: YearsBlock) -> None:
+    def ingest(block: YearsBlock, source: str) -> None:
         for index, year in enumerate(block.years):
             if year is None:
                 continue
             bucket = by_year.setdefault(year, {})
             for key, values in block.series.items():
-                if index < len(values) and values[index] is not None:
-                    bucket.setdefault(key, values[index])
+                if index >= len(values) or values[index] is None:
+                    continue
+                incoming = values[index]
+                existing = bucket.get(key, "__missing__")
+                if existing == "__missing__" or existing is None and key not in bucket:
+                    bucket[key] = incoming
+                elif existing is None:
+                    continue
+                elif abs(float(existing) - float(incoming)) <= 0.01:
+                    bucket[key] = incoming
+                else:
+                    bucket[key] = None
+                    conflicts.append(f"SOURCE_CONFLICT:{year}:{key}")
 
-    ingest(primary.years)
+    ingest(primary.years, "primary")
     for extra in extras:
-        ingest(extra.years)
+        ingest(extra.years, "extra")
 
     if not by_year:
         return primary
@@ -988,6 +1014,10 @@ def merge_liasse_years(
     if years_out[1] is None:
         years_out[1] = latest - 1
     available = sum(1 for index in range(3) if _series_column_filled(series, index))
+    if conflicts:
+        current = list(getattr(primary, "warnings", None) or [])
+        current.extend(list(dict.fromkeys(conflicts)))
+        primary.warnings = current
     primary.years = YearsBlock(
         labels=_year_labels(years_out, series),
         years=years_out,
@@ -1216,7 +1246,19 @@ async def analyze_scoring_document(
 
 async def run_scoring_job(job_id: str, *, store: Any, on_completed: Callable[[str, ScoringAnalysisResult], None] | None = None) -> None:
     job = store.get(job_id)
-    if job is None or job.pdf_bytes is None:
+    pdf_bytes = getattr(job, "pdf_bytes", None) if job else None
+    extra_pdfs = list(getattr(job, "extra_pdfs", None) or []) if job else []
+    if job is not None and pdf_bytes is None:
+        from app.services import minio_storage
+
+        primary = getattr(job, "primary_document", None)
+        if primary is None:
+            return
+        pdf_bytes = minio_storage.download_bytes(primary.object_key)
+        extra_pdfs = []
+        for extra in getattr(job, "extra_documents", None) or []:
+            extra_pdfs.append((minio_storage.download_bytes(extra.object_key), extra.filename))
+    if job is None or pdf_bytes is None:
         return
 
     store.update(
@@ -1282,13 +1324,13 @@ async def run_scoring_job(job_id: str, *, store: Any, on_completed: Callable[[st
 
     try:
         result = await analyze_scoring_document(
-            job.pdf_bytes,
+            pdf_bytes,
             job.filename,
             max_pages=job.max_pages,
             emit=emit,
         )
         extras: list[ScoringAnalysisResult] = []
-        for extra_bytes, extra_name in job.extra_pdfs or []:
+        for extra_bytes, extra_name in extra_pdfs:
             emit(
                 "calculating_ratios",
                 {"message": f"Exercice complémentaire — {extra_name}"},

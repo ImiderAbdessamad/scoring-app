@@ -41,7 +41,7 @@ export type StepErrors = Record<string, string>
 export function resolveSecteur(
   data: CreateDossierFormState['entreprise'],
 ): string {
-  if (data.secteurPreset === 'Autre') return 'Autre'
+  if (data.secteurPreset === 'Autre') return data.secteurAutre.trim()
   return data.secteurPreset.trim()
 }
 

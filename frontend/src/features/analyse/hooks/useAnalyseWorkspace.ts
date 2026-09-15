@@ -4,12 +4,18 @@ import { fetchAnalyseState, askCopilot } from '@/services/api/analyse'
 import {
   approveDossier,
   cancelDossierDecision,
+  createMemo,
+  fetchDecisionEligibility,
   fetchDossierById,
   fetchDossierDetail,
+  fetchMemos,
   rejectDossier,
   replaceDossierDocument,
   reserveDossier,
+  signMemo,
 } from '@/services/api/dossiers'
+import { ApiError } from '@/services/api/client'
+import type { DecisionEligibility } from '@/types/analyse'
 import { buildAnalyseWorkspace, getMockAnalyseWorkspace } from '@/services/mocks/analyseData'
 import { useAnalyseJobs } from '@/features/analyse/AnalyseJobsProvider'
 import { STATUS_META } from '@/lib/format'
@@ -70,7 +76,12 @@ export function useAnalyseWorkspace(id: string | undefined) {
   const [decision, setDecisionKind] = useState<DecisionKind | null>(null)
   const [decisionTime, setDecisionTime] = useState('')
   const [decisionBusy, setDecisionBusy] = useState(false)
+  const [decisionError, setDecisionError] = useState<string | null>(null)
+  const [decisionBlockingReasons, setDecisionBlockingReasons] = useState<string[]>([])
+  const [decisionEligibility, setDecisionEligibility] = useState<DecisionEligibility | null>(null)
   const [memoSigned, setMemoSigned] = useState(false)
+  const [memoBusy, setMemoBusy] = useState(false)
+  const [memoId, setMemoId] = useState<string | null>(null)
   const [copilotOpen, setCopilotOpen] = useState(true)
 
   const [pipeline, setPipeline] = useState<PipelineState>({
@@ -149,6 +160,18 @@ export function useAnalyseWorkspace(id: string | undefined) {
         setDecisionTime(DECISION_FROM_STATUS[res.header.status] ? nowTime() : '')
         setDecisionBusy(false)
         setMemoSigned(false)
+        if (!USE_MOCK) {
+          fetchDecisionEligibility(id)
+            .then((el) => setDecisionEligibility(el as DecisionEligibility))
+            .catch(() => setDecisionEligibility(null))
+          fetchMemos(id)
+            .then((memos) => {
+              const signed = memos.find((m) => m.status === 'SIGNED')
+              setMemoSigned(Boolean(signed))
+              if (memos[0]) setMemoId(memos[0].id)
+            })
+            .catch(() => undefined)
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur de chargement')
@@ -257,17 +280,27 @@ export function useAnalyseWorkspace(id: string | undefined) {
     async (kind: DecisionKind) => {
       if (!id || decisionBusy) return
       setDecisionBusy(true)
+      setDecisionError(null)
+      setDecisionBlockingReasons([])
       try {
+        const body = kind === 'reject' ? { reason: 'Rejet analyste' } : {}
         const dossier =
           kind === 'approve'
-            ? await approveDossier(id)
+            ? await approveDossier(id, body)
             : kind === 'reject'
-              ? await rejectDossier(id)
-              : await reserveDossier(id)
+              ? await rejectDossier(id, body)
+              : await reserveDossier(id, body)
         setData((prev) => (prev ? withHeaderStatus(prev, dossier.status) : prev))
         setDecisionKind(kind)
         setDecisionTime(nowTime())
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          const detail = err.detail as { blocking_reasons?: string[]; message?: string } | undefined
+          setDecisionBlockingReasons(detail?.blocking_reasons || [])
+          setDecisionError(err.message)
+        } else {
+          setDecisionError(err instanceof Error ? err.message : 'Décision impossible')
+        }
         return
       } finally {
         setDecisionBusy(false)
@@ -291,7 +324,30 @@ export function useAnalyseWorkspace(id: string | undefined) {
     }
   }, [id, decisionBusy])
 
-  const toggleMemoSign = useCallback(() => setMemoSigned((v) => !v), [])
+  const toggleMemoSign = useCallback(async () => {
+    if (!id || memoBusy) return
+    setMemoBusy(true)
+    setDecisionError(null)
+    try {
+      let currentId = memoId
+      if (!currentId) {
+        const created = await createMemo(id, { source: 'ui' })
+        currentId = created.id
+        setMemoId(created.id)
+      }
+      await signMemo(id, currentId)
+      setMemoSigned(true)
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : 'Signature du mémo impossible')
+    } finally {
+      setMemoBusy(false)
+    }
+  }, [id, memoBusy, memoId])
+
+  const clearDecisionError = useCallback(() => {
+    setDecisionError(null)
+    setDecisionBlockingReasons([])
+  }, [])
   const toggleCopilot = useCallback(() => setCopilotOpen((v) => !v), [])
 
   const runPipeline = useCallback(() => {
@@ -380,7 +436,12 @@ export function useAnalyseWorkspace(id: string | undefined) {
     decision,
     decisionTime,
     decisionBusy,
+    decisionError,
+    decisionBlockingReasons,
+    decisionEligibility,
+    clearDecisionError,
     memoSigned,
+    memoBusy,
     copilotOpen,
     pipeline,
     messages,

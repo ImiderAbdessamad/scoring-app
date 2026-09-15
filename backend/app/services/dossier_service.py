@@ -16,7 +16,7 @@ from app.schemas.create_dossier import (
     StoredFileMeta,
 )
 from app.schemas.dossier import Dossier, DossierListResponse
-from app.services import dossier_store, kafka_publisher, minio_storage
+from app.services import dossier_store, file_validation, kafka_publisher, minio_storage
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,6 @@ ALLOWED_CONTENT = {
     "image/pjpeg",
 }
 ALLOWED_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg")
-MAX_FILE_BYTES = 15 * 1024 * 1024
 
 _PRESET_SECTORS = {
     "Transport",
@@ -47,11 +46,18 @@ _PRESET_SECTORS = {
 }
 
 
+def _sector_fields(secteur: str) -> tuple[str, str | None, str | None]:
+    raw = (secteur or "").strip()
+    if not raw:
+        return "", None, None
+    if raw in _PRESET_SECTORS:
+        return raw, raw, None
+    return raw, None, None
+
+
 def _store_sector(secteur: str) -> str:
-    s = secteur.strip()
-    if not s or s == "Autre" or s not in _PRESET_SECTORS:
-        return "Autre"
-    return s
+    raw, _norm, _code = _sector_fields(secteur)
+    return raw
 
 
 def list_dossiers(status: str | None, q: str | None) -> DossierListResponse:
@@ -112,30 +118,7 @@ def _detect_file_kind(data: bytes, filename: str) -> str | None:
 
 
 def _validate_upload(file: UploadFile, data: bytes) -> None:
-    filename = file.filename or "file"
-    if not data:
-        raise HTTPException(status_code=400, detail=f"Fichier vide : {filename}")
-    if len(data) > MAX_FILE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Fichier trop volumineux (max 15 Mo) : {filename}",
-        )
-    name = filename.lower()
-    ctype = (file.content_type or "").split(";")[0].strip().lower()
-    if name.endswith(".webp") or ctype == "image/webp":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Format WEBP non autorisé — utilisez PDF, PNG ou JPG : {filename}",
-        )
-    kind = _detect_file_kind(data, filename)
-    ok_type = ctype in ALLOWED_CONTENT or ctype == "application/octet-stream"
-    ok_ext = name.endswith(ALLOWED_EXTENSIONS)
-    if kind or ok_type or ok_ext:
-        return
-    raise HTTPException(
-        status_code=400,
-        detail=f"Type non autorisé (PDF/PNG/JPG) : {filename}",
-    )
+    file_validation.validate_upload(file.filename or "file", data, file.content_type)
 
 
 async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
@@ -166,6 +149,8 @@ def _put_bytes(
         size=len(data),
         contentType=content_type or "application/octet-stream",
         category=category,
+        sha256=file_validation.sha256_bytes(data),
+        version=1,
     )
 
 
@@ -229,10 +214,16 @@ async def create_dossier(
             detail=f"Stockage fichiers indisponible : {exc}",
         ) from exc
 
+    sector_raw, sector_normalized, benchmark_code = _sector_fields(
+        payload.entreprise.secteurRaw or payload.entreprise.secteur
+    )
     record = StoredDossierRecord(
         id=dossier_id,
         name=payload.entreprise.raisonSociale.strip(),
-        sector=_store_sector(payload.entreprise.secteur),
+        sector=sector_raw or payload.entreprise.secteur,
+        sectorRaw=sector_raw,
+        sectorNormalized=sector_normalized,
+        benchmarkSectorCode=benchmark_code,
         amount=payload.financement.montantDemande,
         duration=payload.financement.dureeMois,
         score=0,
@@ -243,6 +234,7 @@ async def create_dossier(
         urgency=payload.financement.urgence,
         receivedLabel=f"Auj. {received_time}",
         ice=payload.entreprise.ice.strip(),
+        identifiantFiscal=payload.entreprise.identifiantFiscal.strip(),
         rc=payload.entreprise.rc.strip(),
         nature=payload.financement.nature,
         valeurBien=payload.financement.valeurBien,
@@ -288,20 +280,28 @@ def _apply_status(dossier_id: str, status: str) -> Dossier:
     return dossier_store.to_list_item(record)
 
 
-def approve_dossier(dossier_id: str) -> Dossier:
-    return _apply_status(dossier_id, "approved")
+def approve_dossier(dossier_id: str, reason: str | None = None, comment: str | None = None) -> Dossier:
+    from app.services.decision_service import approve
+
+    return approve(dossier_id, reason, comment)
 
 
-def reject_dossier(dossier_id: str) -> Dossier:
-    return _apply_status(dossier_id, "rejected")
+def reject_dossier(dossier_id: str, reason: str | None = None, comment: str | None = None) -> Dossier:
+    from app.services.decision_service import reject
+
+    return reject(dossier_id, reason, comment)
 
 
-def reserve_dossier(dossier_id: str) -> Dossier:
-    return _apply_status(dossier_id, "reserved")
+def reserve_dossier(dossier_id: str, reason: str | None = None, comment: str | None = None) -> Dossier:
+    from app.services.decision_service import reserve
+
+    return reserve(dossier_id, reason, comment)
 
 
-def cancel_decision(dossier_id: str) -> Dossier:
-    return _apply_status(dossier_id, "pending")
+def cancel_decision(dossier_id: str, reason: str | None = None, comment: str | None = None) -> Dossier:
+    from app.services.decision_service import cancel
+
+    return cancel(dossier_id, reason, comment)
 
 
 async def replace_document(

@@ -2,10 +2,16 @@ import { API_BASE_URL } from '@/config/env'
 
 export class ApiError extends Error {
   status: number
+  code?: string
+  detail?: unknown
+  payload?: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, extra?: { code?: string; detail?: unknown; payload?: unknown }) {
     super(message)
     this.status = status
+    this.code = extra?.code
+    this.detail = extra?.detail
+    this.payload = extra?.payload
     this.name = 'ApiError'
   }
 }
@@ -22,7 +28,7 @@ export async function apiGet<T>(path: string): Promise<T> {
   })
 
   if (!res.ok) {
-    throw new ApiError(res.status, `API ${res.status}: ${path}`)
+    throw await toApiError(res, path)
   }
 
   return res.json() as Promise<T>
@@ -36,29 +42,44 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   })
 
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res, path))
+    throw await toApiError(res, path)
   }
 
   return res.json() as Promise<T>
 }
 
-async function readErrorMessage(res: Response, path: string): Promise<string> {
+async function toApiError(res: Response, path: string): Promise<ApiError> {
+  let payload: unknown
   try {
-    const body = (await res.json()) as { detail?: unknown }
-    if (typeof body.detail === 'string') return body.detail
-    if (Array.isArray(body.detail)) {
-      return body.detail
-        .map((d) =>
-          typeof d === 'object' && d && 'msg' in d
-            ? String((d as { msg: unknown }).msg)
-            : JSON.stringify(d),
-        )
-        .join(' · ')
-    }
+    payload = await res.json()
   } catch {
-    
+    return new ApiError(res.status, `API ${res.status}: ${path}`)
   }
-  return `API ${res.status}: ${path}`
+  const body = payload as { detail?: unknown; code?: string; message?: string }
+  const detail = body.detail
+  let code: string | undefined = body.code
+  let message = `API ${res.status}: ${path}`
+  if (typeof detail === 'string') message = detail
+  else if (detail && typeof detail === 'object' && detail !== null && 'code' in (detail as object)) {
+    const d = detail as { code?: string; message?: string; blocking_reasons?: string[] }
+    code = d.code || code
+    message = d.message || message
+  } else if (Array.isArray(detail)) {
+    message = detail.map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : JSON.stringify(d))).join(' · ')
+  }
+  return new ApiError(res.status, message, { code, detail, payload })
+}
+
+export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'PUT',
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw await toApiError(res, path)
+  }
+  return res.json() as Promise<T>
 }
 
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
@@ -69,7 +90,7 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   })
 
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res, path))
+    throw await toApiError(res, path)
   }
 
   return res.json() as Promise<T>

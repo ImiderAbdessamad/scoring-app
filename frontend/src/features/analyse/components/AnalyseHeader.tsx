@@ -10,7 +10,7 @@ import {
 import { GradeBadge, ScorePill } from '@/components/ui/ScorePill'
 import { STATUS_META, formatAmountMad } from '@/lib/format'
 import { AnalyseTabs } from '@/features/analyse/components/AnalyseTabs'
-import type { AnalyseHeader as AnalyseHeaderData, AnalyseTabId, DecisionKind } from '@/types/analyse'
+import type { AnalyseHeader as AnalyseHeaderData, AnalyseTabId, DecisionEligibility, DecisionKind } from '@/types/analyse'
 
 const DECISIONS: Array<{
   kind: DecisionKind
@@ -53,6 +53,10 @@ type Props = {
   score: number
   classe?: string | null
   provisional?: boolean
+  scoreStatus?: string
+  decisionEligibility?: DecisionEligibility | null
+  decisionBlockingReasons?: string[]
+  onOpenEligibility?: () => void
   decision: DecisionKind | null
   decisionTime: string
   decisionBusy: boolean
@@ -69,6 +73,10 @@ export function AnalyseHeader({
   score,
   classe,
   provisional,
+  scoreStatus,
+  decisionEligibility,
+  decisionBlockingReasons,
+  onOpenEligibility,
   decision,
   decisionTime,
   decisionBusy,
@@ -110,7 +118,11 @@ export function AnalyseHeader({
               <button
                 key={d.kind}
                 type="button"
-                disabled={decisionBusy}
+                disabled={
+                  decisionBusy ||
+                  (d.kind === 'approve' && decisionEligibility?.eligible_for_approval === false) ||
+                  (d.kind === 'reserve' && decisionEligibility?.eligible_for_reserve === false)
+                }
                 onClick={() => (active ? onClearDecision() : onDecision(d.kind))}
                 className={[
                   'inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border-0 px-3 py-1.5 text-[12px] font-bold transition-[filter,transform] duration-150 hover:-translate-y-px active:scale-[0.98] disabled:cursor-wait disabled:opacity-60',
@@ -149,15 +161,37 @@ export function AnalyseHeader({
               <h1 className="m-0 truncate text-[17px] font-extrabold tracking-tight text-slate-900">
                 {header.companyName}
               </h1>
-              <ScorePill score={score} classe={classe} />
-              <GradeBadge classe={classe} />
+              <ScorePill
+                score={
+                  scoreStatus === 'FINAL'
+                    ? (Number.isFinite(score) ? score : 0)
+                    : scoreStatus === 'PARTIAL'
+                      ? score
+                      : 0
+                }
+                classe={scoreStatus === 'FINAL' ? classe : null}
+              />
+              {scoreStatus === 'FINAL' ? <GradeBadge classe={classe} /> : null}
               <span
                 className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
-                  provisional ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                  scoreStatus === 'NOT_CALCULABLE'
+                    ? 'bg-slate-100 text-slate-600'
+                    : scoreStatus === 'PARTIAL' || provisional
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-emerald-50 text-emerald-700'
                 }`}
               >
-                {provisional ? 'Provisoire' : 'Final'}
+                {scoreStatus === 'NOT_CALCULABLE'
+                  ? 'Score non calculable'
+                  : scoreStatus === 'PARTIAL' || provisional
+                    ? 'Score provisoire'
+                    : 'Score final'}
               </span>
+              {decisionBlockingReasons && decisionBlockingReasons.length > 0 ? (
+                <button type="button" onClick={onOpenEligibility} className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-800">
+                  {decisionBlockingReasons.length} vérification(s) manquante(s)
+                </button>
+              ) : null}
             </div>
             <p className="m-0 mt-0.5 truncate text-[12px] text-wb-muted">{header.subtitle}</p>
           </div>

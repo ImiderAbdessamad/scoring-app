@@ -59,6 +59,10 @@ def get_producer():
 
 
 def publish(topic: str, payload: dict[str, Any], *, key: str | None = None) -> bool:
+    from app.core.config import settings
+
+    if not settings.kafka_enabled:
+        return False
     producer = get_producer()
     if producer is None:
         return False

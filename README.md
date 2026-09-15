@@ -17,6 +17,7 @@ py -3 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 
 # 2. Frontend (autre terminal)
@@ -28,6 +29,9 @@ npm run dev
 
 Ouvre http://localhost:5173 — l’application est ouverte, sans page de connexion.
 Les PDF sont stockés dans `backend/data/files/`. Kafka et MinIO sont désactivés.
+SQLite (`DATABASE_URL=sqlite+aiosqlite:///./data/wafabail.db`) est le mode **pilote mono-instance**.
+Il n’est pas un déploiement HA : en production multi-instance, PostgreSQL est conseillé.
+Les jobs RUNNING au redémarrage passent à INTERRUPTED.
 
 L’extraction scoring appelle toujours Ollama (URL dans `backend/.env`) : une connexion internet suffit, pas Docker.
 

@@ -14,6 +14,14 @@ from app.schemas.analyse import AnalyseJobProgress, JobStatus, ScoringAnalysisRe
 
 
 @dataclass
+class AnalysisDocumentRef:
+    document_id: str
+    object_key: str
+    filename: str
+    sha256: str | None = None
+
+
+@dataclass
 class ScoringJob:
     job_id: str
     dossier_id: str
@@ -36,6 +44,19 @@ class ScoringJob:
     filename: str = "document.pdf"
     max_pages: int | None = None
     extra_pdfs: list[tuple[bytes, str]] = field(default_factory=list)
+    primary_document: AnalysisDocumentRef | None = None
+    extra_documents: list[AnalysisDocumentRef] = field(default_factory=list)
+    dispatcher: str = "local"
+
+
+_API_FROM_DB = {
+    "QUEUED": "queued",
+    "RUNNING": "processing",
+    "COMPLETED": "completed",
+    "FAILED": "failed",
+    "CANCELLED": "cancelled",
+    "INTERRUPTED": "interrupted",
+}
 
 
 class ScoringJobStore:
@@ -49,9 +70,11 @@ class ScoringJobStore:
         self,
         *,
         dossier_id: str,
-        pdf_bytes: bytes,
         filename: str,
         max_pages: int | None = None,
+        primary_document: AnalysisDocumentRef | None = None,
+        extra_documents: list[AnalysisDocumentRef] | None = None,
+        pdf_bytes: bytes | None = None,
         extra_pdfs: list[tuple[bytes, str]] | None = None,
     ) -> ScoringJob:
         self.cleanup()
@@ -59,9 +82,11 @@ class ScoringJobStore:
         job = ScoringJob(
             job_id=job_id,
             dossier_id=dossier_id,
-            pdf_bytes=pdf_bytes,
             filename=filename,
             max_pages=max_pages,
+            primary_document=primary_document,
+            extra_documents=list(extra_documents or []),
+            pdf_bytes=pdf_bytes,
             extra_pdfs=list(extra_pdfs or []),
             message="Job en file d'attente",
         )
@@ -73,24 +98,84 @@ class ScoringJobStore:
                     return old
             self._jobs[job_id] = job
             self._by_dossier[dossier_id] = job_id
+        self._persist(job)
+        return job
+
+    def _persist(self, job: ScoringJob) -> None:
+        try:
+            from app.db.repositories import job_repository
+
+            job_repository.upsert_from_job(job)
+        except Exception:
+            return
+
+    def _hydrate(self, row) -> ScoringJob:
+        import json
+
+        docs = json.loads(row.documents_json or "{}")
+        primary = docs.get("primary")
+        extras = docs.get("extra") or []
+        job = ScoringJob(
+            job_id=row.id,
+            dossier_id=row.dossier_id,
+            status=_API_FROM_DB.get(row.status, "queued"),  # type: ignore[arg-type]
+            progress_pct=row.progress_pct,
+            current_step=row.current_step,
+            current_page=row.current_page,
+            pages_total=row.pages_total,
+            pages_financial=row.pages_financial,
+            pages_skipped=row.pages_skipped,
+            pages_failed=row.pages_failed,
+            message=row.message or "",
+            error=row.error,
+            filename=row.filename,
+            dispatcher=row.dispatcher,
+            primary_document=AnalysisDocumentRef(**primary) if primary else None,
+            extra_documents=[AnalysisDocumentRef(**item) for item in extras if item],
+        )
         return job
 
     def get(self, job_id: str) -> ScoringJob | None:
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
-                return None
-            if time.time() - job.updated_at > self._ttl:
-                del self._jobs[job_id]
-                return None
-            return job
+            if job is not None:
+                if time.time() - job.updated_at > self._ttl and job.status in {"completed", "failed"}:
+                    return job
+                return job
+        try:
+            from app.db.repositories import job_repository
+
+            row = job_repository.get(job_id)
+        except Exception:
+            return None
+        if row is None:
+            return None
+        job = self._hydrate(row)
+        with self._lock:
+            self._jobs[job.job_id] = job
+            self._by_dossier[job.dossier_id] = job.job_id
+        return job
 
     def get_for_dossier(self, dossier_id: str) -> ScoringJob | None:
         with self._lock:
             job_id = self._by_dossier.get(dossier_id)
-        if not job_id:
+        if job_id:
+            found = self.get(job_id)
+            if found:
+                return found
+        try:
+            from app.db.repositories import job_repository
+
+            row = job_repository.get_for_dossier(dossier_id)
+        except Exception:
             return None
-        return self.get(job_id)
+        if row is None:
+            return None
+        job = self._hydrate(row)
+        with self._lock:
+            self._jobs[job.job_id] = job
+            self._by_dossier[job.dossier_id] = job.job_id
+        return job
 
     def update(self, job_id: str, **kwargs: Any) -> ScoringJob | None:
         with self._lock:
@@ -101,7 +186,8 @@ class ScoringJobStore:
                 if hasattr(job, key):
                     setattr(job, key, value)
             job.updated_at = time.time()
-            return job
+        self._persist(job)
+        return job
 
     def emit(self, job_id: str, event_type: str, data: dict[str, Any] | None = None) -> None:
         with self._lock:

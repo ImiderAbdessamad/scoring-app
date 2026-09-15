@@ -33,7 +33,10 @@ _RATIO_UI_STATUS = {
 }
 
 def analysis_source_fingerprint(record: StoredDossierRecord) -> str:
-    parts = [f"{f.category}|{f.name}|{f.size}|{f.objectKey}" for f in record.files]
+    parts = [
+        f"{f.category}|{getattr(f, 'sha256', None) or ''}|{f.name}|{f.size}|{f.objectKey}|{getattr(f, 'version', 1)}"
+        for f in record.files
+    ]
     return hashlib.sha256("\n".join(sorted(parts)).encode("utf-8")).hexdigest()[:24]
 
 
@@ -63,7 +66,7 @@ def _documents(record: StoredDossierRecord, result: ScoringAnalysisResult | None
             "id": doc_id,
             "name": file.name,
             "meta": f"{(file.contentType.split('/')[-1] or 'fichier').upper()} · {size_ko} Ko",
-            "confidence": 0 if result is None else (92 if kind == "liasse" else 80),
+            "confidence": None if result is None else (int(round(result.completeness_pct)) if kind == "liasse" else None),
             "uploadName": file.name,
         })
 
@@ -80,9 +83,9 @@ def _documents(record: StoredDossierRecord, result: ScoringAnalysisResult | None
             part for part in (identity.declaration_date, identity.declaration_time) if part
         )
         identity_fields = [
-            {"label": "Raison sociale", "value": identity.raison_sociale or company.raison_sociale or "—", "source": "Bilan — identification", "confidence": 95 if identity.raison_sociale or company.raison_sociale else 0},
-            {"label": "ICE", "value": identity.ice or company.ice or "—", "source": "Bilan — identification", "confidence": 95 if identity.ice or company.ice else 0},
-            {"label": "Identifiant fiscal", "value": identity.identifiant_fiscal or company.identifiant_fiscal or "—", "source": "Bilan — identification", "confidence": 95 if identity.identifiant_fiscal or company.identifiant_fiscal else 0},
+            {"label": "Raison sociale", "value": identity.raison_sociale or company.raison_sociale or "—", "source": "Bilan — identification", "confidence": None},
+            {"label": "ICE", "value": identity.ice or company.ice or "—", "source": "Bilan — identification", "confidence": None},
+            {"label": "Identifiant fiscal", "value": identity.identifiant_fiscal or company.identifiant_fiscal or record.identifiantFiscal or "—", "source": "Bilan — identification", "confidence": None},
             {"label": "Taxe professionnelle", "value": identity.taxe_professionnelle or company.taxe_professionnelle or "—", "source": "Bilan — identification", "confidence": 90 if identity.taxe_professionnelle else 0},
             {"label": "RC", "value": company.rc or record.rc or "—", "source": "Bilan / dossier", "confidence": 80 if (company.rc or record.rc) else 0},
             {"label": "Ville", "value": identity.ville or company.ville or "—", "source": "Bilan — identification", "confidence": 90 if identity.ville else 0},
@@ -140,9 +143,15 @@ def _documents(record: StoredDossierRecord, result: ScoringAnalysisResult | None
         {"id": "rc", "name": "RC", "ok": "rc" in present_kinds or bool(record.rc)},
         {"id": "releves", "name": "Relevés bancaires", "ok": "releves" in present_kinds},
     ]
-    missing = [{"id": r["id"], "name": r["name"], "meta": "Pièce requise"} for r in required if not r["ok"]]
-    present_req = sum(1 for r in required if r["ok"])
-    completeness = round(100 * present_req / max(len(required), 1))
+    from app.services.document_checklist import evaluate_checklist
+
+    checklist = evaluate_checklist(record)
+    missing = [
+        {"id": r["type"], "name": r["type"], "meta": r["reason"]}
+        for r in checklist["missing"]
+    ]
+    present_req = checklist["document_completeness_pct"]
+    completeness = checklist["document_completeness_pct"]
     return {
         "present": present,
         "total": len(required),
@@ -171,7 +180,7 @@ def overlay_live_documents(record: StoredDossierRecord, workspace: dict[str, Any
         kept = by_name.get(item["name"])
         if kept:
             fresh["extractions"][item["id"]] = kept
-            item["confidence"] = item.get("confidence") or 80
+            item["confidence"] = kept.get("confidence")
     if not fresh["defaultDocId"] and fresh["items"]:
         fresh["defaultDocId"] = fresh["items"][-1]["id"]
     current_fp = analysis_source_fingerprint(record)
@@ -364,8 +373,11 @@ def _ratios_block(result: ScoringAnalysisResult, record: StoredDossierRecord | N
 
 def _scoring_block(record: StoredDossierRecord, result: ScoringAnalysisResult, ratios: dict[str, Any]) -> dict[str, Any]:
     decision = result.decision
-    score_raw = float(result.score_raw if result.score_raw is not None else decision.get("score") or 0)
-    score = score_raw
+    score_status = decision.get("score_status") or ("PARTIAL" if decision.get("provisional") else "FINAL")
+    score_raw = decision.get("final_score") if score_status == "FINAL" else decision.get("partial_score")
+    if score_raw is None:
+        score_raw = result.score_raw if result.score_raw is not None else decision.get("score")
+    score = score_raw if score_raw is not None else 0
     axe1 = result.axes.get("financier") or {}
     n_grid = max(int(axe1.get("ratios_expected") or len(AXE1_RATIO_KEYS)), 1)
     conforme_pct = round(100.0 / n_grid, 1)
@@ -432,13 +444,19 @@ def _scoring_block(record: StoredDossierRecord, result: ScoringAnalysisResult, r
     ratios_total = calculable or len(AXE1_RATIO_KEYS)
 
     return {
-        "score": score,
+        "score": score if score_raw is not None else 0,
         "scoreRaw": score_raw,
+        "scoreStatus": score_status,
+        "financialScore": decision.get("financial_score"),
+        "behavioralScore": decision.get("behavioral_score"),
+        "sectorScore": decision.get("sector_score"),
+        "partialScore": decision.get("partial_score"),
+        "finalScore": decision.get("final_score"),
         "classe": decision.get("classe") or "",
         "recommendation": decision.get("recommandation") or decision.get("decision") or "—",
         "riskLabel": decision.get("decision") or "—",
         "riskLevel": decision.get("risk_level") or "",
-        "provisional": bool(decision.get("provisional") or not result.readiness.ready_for_automatic_scoring),
+        "provisional": score_status != "FINAL",
         "summary": (
             f"{record.name} — extraction {result.completeness_pct:.0f} % des postes financiers. "
             f"Score composite {score_raw:.2f}/100, classe {decision.get('classe', '—')} « {decision.get('decision', '—')} ». "
@@ -669,11 +687,17 @@ def _factorielle(result: ScoringAnalysisResult, record: StoredDossierRecord | No
 
 def _comportement(result: ScoringAnalysisResult) -> dict[str, Any]:
     axe = result.axes.get("comportemental") or {}
-    score = int(round(axe["score"])) if isinstance(axe.get("score"), (int, float)) else 0
+    available = axe.get("status") not in {None, "not_provided"} and axe.get("score") is not None
     return {
-        "score": score,
-        "profileLabel": "Données bancaires non extraites",
-        "summary": axe.get("note") or "Les relevés bancaires ne sont pas encore passés au moteur. L'axe comportemental (15 %) n'entre pas dans la note.",
+        "score": axe.get("score") if available else None,
+        "status": "AVAILABLE" if available else "NOT_AVAILABLE",
+        "available": available,
+        "profileLabel": "Données bancaires non extraites" if not available else "Axe comportemental",
+        "summary": (
+            "Axe comportemental non calculé — relevés bancaires non analysés."
+            if not available
+            else (axe.get("note") or "")
+        ),
         "metrics": [
             {"label": "Incidents", "value": "n/c", "tone": "neutral", "sub": "Non fourni"},
             {"label": "Domiciliation CA", "value": "n/c", "tone": "neutral", "sub": "Relevés requis"},
@@ -689,7 +713,17 @@ def _comportement(result: ScoringAnalysisResult) -> dict[str, Any]:
 
 def _benchmark(record: StoredDossierRecord, result: ScoringAnalysisResult) -> dict[str, Any]:
     axe = result.axes.get("sectoriel") or {}
-    rows = []
+    if axe.get("status") == "NO_BENCHMARK" or axe.get("score") is None:
+        return {
+            "sectorLabel": record.sector,
+            "sampleSize": None,
+            "status": "NO_BENCHMARK",
+            "caption": "Référentiel sectoriel non disponible pour ce secteur.",
+            "rows": [],
+            "aboveMedianLabel": "Non disponible",
+            "comparables": [],
+            "meta": axe.get("meta") or {},
+        }
     for item in axe.get("comparaisons") or []:
         key = item.get("indicateur")
         meta = RATIO_METADATA.get(key, {})
@@ -883,9 +917,11 @@ def empty_workspace(record: StoredDossierRecord) -> dict[str, Any]:
         "factorielle": [],
         "yearLabels": ["—", "N-1", "N"],
         "comportement": {
-            "score": 0,
+            "score": None,
+            "status": "NOT_AVAILABLE",
+            "available": False,
             "profileLabel": "Non calculé",
-            "summary": "Disponible après extraction.",
+            "summary": "Axe comportemental non calculé — relevés bancaires non analysés.",
             "metrics": [],
             "months": [],
             "signals": [],
@@ -893,7 +929,8 @@ def empty_workspace(record: StoredDossierRecord) -> dict[str, Any]:
         "benchmark": {
             "sectorLabel": record.sector,
             "sampleSize": 0,
-            "caption": "Disponible après extraction.",
+            "status": "NO_BENCHMARK",
+            "caption": "Référentiel sectoriel non disponible pour ce secteur.",
             "rows": [],
             "aboveMedianLabel": "—",
             "comparables": [],
@@ -981,6 +1018,12 @@ def build_workspace(record: StoredDossierRecord, result: ScoringAnalysisResult) 
         "yearN": result.years.years[2] if result.years.years else None,
         "yearN1": result.years.years[1] if len(result.years.years) > 1 else None,
     }
+    try:
+        from app.services.sector_analysis_service import sector_analysis_service
+
+        sector = sector_analysis_service.for_workspace(record, result)
+    except Exception:
+        sector = {"status": "UNAVAILABLE", "warnings": ["Analyse sectorielle temporairement indisponible."], "scoring": {"status": "NOT_CALIBRATED", "includedInFinalScore": False, "score": None}}
     return {
         "header": _header(record, result),
         "pipeline": _pipeline(result, int(round(float(scoring["score"] or 0)))),
@@ -992,7 +1035,17 @@ def build_workspace(record: StoredDossierRecord, result: ScoringAnalysisResult) 
         "yearLabels": result.years.labels,
         "period": period,
         "comportement": _comportement(result),
-        "benchmark": _benchmark(record, result),
+        "sectorAnalysis": sector,
+        "benchmark": {
+            "sectorLabel": (sector.get("sector") or {}).get("label") or record.sector,
+            "sampleSize": None,
+            "status": "NO_BENCHMARK",
+            "caption": "Le score sectoriel n’est pas calibré. L’analyse HCP est informative.",
+            "rows": [],
+            "aboveMedianLabel": "Non intégré au score",
+            "comparables": [],
+            "meta": {"source": "HCP"},
+        },
         "memo": _memo(record, result, scoring, ratios),
         "copilot": _copilot(record, scoring, result),
         "financialStatements": _financial_statements(result),

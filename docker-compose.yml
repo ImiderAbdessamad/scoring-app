@@ -1,4 +1,5 @@
 # Contexte = racine WFB (extracteur V6 + backend + frontend).
+# RCC optionnel : docker compose --profile rcc up --build
 name: wafabail
 
 x-backend-env: &backend-env
@@ -8,6 +9,7 @@ x-backend-env: &backend-env
   MINIO_SECRET_KEY: minioadmin
   MINIO_BUCKET: wafabail-dossiers
   MINIO_SECURE: "false"
+  DATABASE_URL: sqlite+aiosqlite:////data/wafabail.db
   DOSSIERS_STORE_PATH: /data/dossiers.json
   FILES_DIR: /data/files
   STORAGE_BACKEND: minio
@@ -17,20 +19,20 @@ x-backend-env: &backend-env
   KAFKA_TOPIC_SCORING: wafabail.scoring.events
   TESSERACT_CMD: /usr/bin/tesseract
   WFB_V6_EXTRACTOR: /app/financial_pdf_extractor-V6_corrected.py
-  CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173
-  OLLAMA_URL: https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com
-  RCC_OLLAMA_URL: https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com
-  RCC_VISION_MODEL: "hf.co/unsloth/GLM-4.6V-Flash-GGUF:Q4_K_M"
-  RCC_OCR_MODEL: glm-ocr:q8_0
-  RCC_VERIFY_MODEL: qwen3-vl:30b
-  RCC_MAPPER_MODEL: qwen3.5:9b
-  RCC_COPILOT_MODEL: qwen3.5:9b
-  RCC_ADJUDICATOR_MODEL: gemma4:latest
+  CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175
+  OLLAMA_URL: ${OLLAMA_URL:-https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com}
+  RCC_OLLAMA_URL: ${RCC_OLLAMA_URL:-https://ollama-lnhh4y-11434.svc-usw2.nicegpu.com}
+  RCC_VISION_MODEL: ${RCC_VISION_MODEL:-hf.co/unsloth/GLM-4.6V-Flash-GGUF:Q4_K_M}
+  RCC_OCR_MODEL: ${RCC_OCR_MODEL:-glm-ocr:q8_0}
+  RCC_VERIFY_MODEL: ${RCC_VERIFY_MODEL:-qwen3-vl:30b}
+  RCC_MAPPER_MODEL: ${RCC_MAPPER_MODEL:-qwen3.5:9b}
+  RCC_COPILOT_MODEL: ${RCC_COPILOT_MODEL:-qwen3.5:9b}
+  RCC_ADJUDICATOR_MODEL: ${RCC_ADJUDICATOR_MODEL:-gemma4:latest}
   RCC_USE_GLM_VERIFICATION: "true"
   RCC_USE_REASONING_MAPPER: "true"
   RCC_USE_ADJUDICATOR: "true"
   RCC_REQUEST_TIMEOUT_SECONDS: "600"
-  PVC_API_KEY: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61
+  PVC_API_KEY: ${PVC_API_KEY:-}
 
 services:
   minio:
@@ -51,13 +53,14 @@ services:
       timeout: 5s
       retries: 8
       start_period: 15s
+    restart: unless-stopped
 
   minio-init:
     image: minio/mc:RELEASE.2024-11-17T19-35-25Z
     container_name: wafabail-minio-init
     depends_on:
       minio:
-        condition: service_healthy
+        condition: service_started
     entrypoint:
       - /bin/sh
       - -c
@@ -105,6 +108,7 @@ services:
       timeout: 10s
       retries: 12
       start_period: 40s
+    restart: unless-stopped
 
   api:
     build:
@@ -113,14 +117,14 @@ services:
     image: wafabail-backend:local
     container_name: wafabail-api
     depends_on:
-      minio:
-        condition: service_healthy
       minio-init:
         condition: service_completed_successfully
       kafka:
         condition: service_healthy
     environment:
       <<: *backend-env
+    env_file:
+      - backend/.env
     ports:
       - "8000:8000"
     volumes:
@@ -155,6 +159,30 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  rcc-frontend:
+    profiles: ["rcc"]
+    build:
+      context: ../rcc-frontend
+      dockerfile: Dockerfile
+    image: wafabail-rcc-frontend:local
+    container_name: wafabail-rcc-frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "8081:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   dossier-worker:
     image: wafabail-backend:local
     container_name: wafabail-dossier-worker
@@ -167,6 +195,8 @@ services:
     environment:
       <<: *backend-env
       KAFKA_CONSUMER_GROUP: wafabail-dossier-worker
+    env_file:
+      - backend/.env
     restart: unless-stopped
 
   scoring-worker:
@@ -181,6 +211,8 @@ services:
     environment:
       <<: *backend-env
       KAFKA_CONSUMER_GROUP: wafabail-scoring-worker
+    env_file:
+      - backend/.env
     restart: unless-stopped
 
 volumes:

@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.ratio_engine import RATIO_METADATA
-from app.services.scoring_engine import DEFAULT_SECTOR_MEDIANS
 
 _NATIONAL_CA_GROWTH = 0.059  # croissance nationale de référence (docx scoring)
 
@@ -61,13 +60,6 @@ def _fmt_ratio(key: str, value: float) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
-def _sector_median_pct(key: str) -> str | None:
-    median = DEFAULT_SECTOR_MEDIANS.get(key)
-    if median is None:
-        return None
-    return _pct(median, signed=key == "croissance_ca")
-
-
 def _axe2(result) -> dict[str, Any]:
     return (result.axes or {}).get("comportemental") or {}
 
@@ -81,19 +73,9 @@ def _points_forts(result) -> list[str]:
     croissance = _ratio(result, "croissance_ca")
     croissance_v = _value(croissance)
     if croissance_v is not None and croissance_v >= 0.05:
-        median = _sector_median_pct("croissance_ca")
-        line = f"Croissance solide du chiffre d'affaires ({_pct(croissance_v, signed=True)})"
-        extras = []
-        if median:
-            extras.append(f"largement au-dessus de la médiane sectorielle ({median})")
-        extras.append(
-            f"de la croissance du secteur au niveau national ({_pct(_NATIONAL_CA_GROWTH, signed=True)})"
+        forts.append(
+            f"Croissance solide du chiffre d'affaires ({_pct(croissance_v, signed=True)})."
         )
-        if extras:
-            line = f"{line}, {' et '.join(extras)}."
-        else:
-            line = f"{line}."
-        forts.append(line)
 
     autonomie = _ratio(result, "autonomie_financiere")
     treso = _ratio(result, "tresorerie_jours_ca")
@@ -121,19 +103,20 @@ def _points_forts(result) -> list[str]:
     )
     if axe2.get("status") not in {None, "not_provided"} and not incident_like:
         forts.append(
-            "Comportement bancaire irréprochable : aucun incident sur 24 mois."
+            "Comportement bancaire déclaré sans signal d'incident dans les métriques fournies."
         )
 
     axe3 = _axe3(result)
-    comparisons = axe3.get("comparaisons") or []
-    n_comp = int(axe3.get("indicateurs_compares") or 0) or len(
-        [c for c in comparisons if c.get("statut") != "Non calculable"]
-    )
-    n_above = sum(1 for c in comparisons if c.get("statut") == "Conforme")
-    if n_comp and n_above / n_comp >= 0.6:
-        forts.append(
-            f"Bon positionnement sectoriel : au-dessus de la médiane sur {n_above} indicateur{'s' if n_above > 1 else ''} sur {n_comp}."
+    if axe3.get("status") == "OK" and axe3.get("score") is not None:
+        comparisons = axe3.get("comparaisons") or []
+        n_comp = int(axe3.get("indicateurs_compares") or 0) or len(
+            [c for c in comparisons if c.get("statut") != "Non calculable"]
         )
+        n_above = sum(1 for c in comparisons if c.get("statut") == "Conforme")
+        if n_comp and n_above / n_comp >= 0.6:
+            forts.append(
+                f"Bon positionnement sectoriel : au-dessus de la médiane sur {n_above} indicateur{'s' if n_above > 1 else ''} sur {n_comp}."
+            )
     return forts
 
 
@@ -144,10 +127,7 @@ def _points_vigilance(result, *, nouveau_financement: float | None) -> list[str]
     rentab = _ratio(result, "rentabilite_commerciale")
     rentab_v = _value(rentab)
     if rentab_v is not None and _status(rentab) in {"À surveiller", "Non conforme"}:
-        median = DEFAULT_SECTOR_MEDIANS.get("rentabilite_commerciale")
         extra = "sous le repère indicatif"
-        if median is not None and rentab_v < median:
-            extra += " et sous la médiane sectorielle"
         vigilance.append(f"Rentabilité commerciale ({_pct(rentab_v)}) {extra}.")
         covered.add("rentabilite_commerciale")
 
@@ -242,20 +222,21 @@ def _score_final(result) -> str:
     label = decision.get("decision") or ""
     reco = _RECO_PHRASE.get(decision.get("recommandation") or "", decision.get("recommandation") or "").rstrip(".")
     blocking = decision.get("blocking_status")
-    classe_bit = f"Classe {classe}"
+    classe_bit = f"Classe {classe}" if classe and classe != "—" else "Classe non attribuée (score non final)"
     if label:
         classe_bit += f" « {label} »"
     parts = [f"Score : {score_f:.2f} / 100", classe_bit]
-    if decision.get("provisional"):
+    if decision.get("score_status") == "PARTIAL" or decision.get("provisional"):
         parts.append("score provisoire (revue manuelle)")
     if reco:
         parts.append(reco)
-    if blocking == "NO_GO":
+    if blocking in {None, "NOT_CHECKED"}:
+        parts.append("cotation BAM non vérifiée")
+        parts.append("incidents bancaires non vérifiés")
+    elif blocking == "NO_GO":
         parts.append("critère bloquant cotation BAM")
     elif blocking == "MANUAL_REVIEW":
         parts.append("revue manuelle requise (incidents non résolus)")
-    else:
-        parts.append("sous réserve de la confirmation de la cotation BAM (absence de critère bloquant)")
     return " — ".join(parts) + "."
 
 

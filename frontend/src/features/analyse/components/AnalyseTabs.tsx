@@ -17,8 +17,8 @@ const TABS: TabDef[] = [
   { id: 'qualite', label: 'Contrôles & qualité' },
   { id: 'bien', label: 'Bien financé' },
   { id: 'factorielle', label: 'Tendances' },
-  { id: 'comportement', label: 'Comportement' },
-  { id: 'benchmark', label: 'Benchmark' },
+  { id: 'comportement', label: 'Comportement bancaire' },
+  { id: 'benchmark', label: 'Analyse sectorielle' },
   { id: 'memo', label: 'Mémo', badge: 'IA', badgeTone: 'ai' },
 ]
 

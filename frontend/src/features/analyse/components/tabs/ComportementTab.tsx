@@ -14,8 +14,13 @@ type Props = {
   comportement: BehaviourBlock
 }
 
+export function BankingBehaviorTab(props: Props) {
+  return <ComportementTab {...props} />
+}
+
 export function ComportementTab({ comportement }: Props) {
-  const tone = scoreTone(comportement.score)
+  const available = comportement.available !== false && comportement.score != null
+  const tone = scoreTone(typeof comportement.score === 'number' ? comportement.score : undefined)
   const maxMonth = Math.max(...comportement.months.map((m) => m.valueK), 1)
 
   return (
@@ -30,11 +35,13 @@ export function ComportementTab({ comportement }: Props) {
             className="flex h-14 w-14 items-center justify-center rounded-full font-mono text-[20px] font-extrabold tabular-nums"
             style={{ color: tone.color, background: tone.bg }}
           >
-            {comportement.score}
+            {available ? comportement.score : '—'}
           </div>
         </div>
         <p className="m-0 mt-3 border-t border-[#F1F2F4] pt-3 text-[12.5px] leading-relaxed text-wb-muted">
-          {comportement.summary}
+          {available
+            ? comportement.summary
+            : 'Analyse comportementale bancaire non disponible — aucun relevé bancaire analysé.'}
         </p>
       </Card>
 

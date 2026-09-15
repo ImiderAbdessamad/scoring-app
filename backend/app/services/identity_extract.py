@@ -4,7 +4,6 @@ from __future__ import annotations
 import io
 import os
 import re
-from pathlib import Path
 from typing import Any
 
 from app.services.v6_result_mapper import identity_from_v6
@@ -78,13 +77,18 @@ def _ocr_identity_with_tesseract(
     import fitz
     import numpy as np
 
-    from app.services.v6_extractor_bridge import resolve_tesseract_cmd
+    from app.services.v6_extractor_bridge import resolve_ocr_language, resolve_tesseract_cmd, resolve_tessdata_dir
 
     cmd = resolve_tesseract_cmd()
-    tessdata = Path(cmd).resolve().parent / "tessdata"
-    if tessdata.is_dir():
-        os.environ.setdefault("TESSDATA_PREFIX", str(tessdata))
-    config = module.Config(tesseract_cmd=cmd, dpi=220, ocr="force")
+    tessdata = resolve_tessdata_dir(cmd)
+    if tessdata is not None:
+        os.environ["TESSDATA_PREFIX"] = str(tessdata)
+    config = module.Config(
+        tesseract_cmd=cmd,
+        dpi=220,
+        ocr="force",
+        ocr_language=resolve_ocr_language(cmd, tessdata),
+    )
     module.tesseract_info(config)
     with fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
         limit = min(len(doc), max(1, max_pages))

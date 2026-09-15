@@ -213,8 +213,18 @@ def score_axe3_sectoriel(
 
     Reproduit l'exemple du document : 4 indicateurs sur 5 au-dessus de la
     médiane → 80/100.
+
+    Pas de fallback métier automatique vers DEFAULT_SECTOR_MEDIANS.
     """
-    medians = sector_medians or DEFAULT_SECTOR_MEDIANS
+    if not sector_medians:
+        return {
+            "score": None,
+            "status": "NOT_CALIBRATED",
+            "comparaisons": [],
+            "indicateurs_compares": 0,
+            "note": "Score sectoriel non calibré — analyse HCP informative uniquement.",
+        }
+    medians = sector_medians
     comparisons: list[dict] = []
     above = 0
     comparable = 0
@@ -238,15 +248,86 @@ def score_axe3_sectoriel(
                 "statut": "Conforme" if better else "À surveiller",
             }
         )
-    score = round(100.0 * above / comparable, 2) if comparable else 0.0
-    return {"score": score, "comparaisons": comparisons, "indicateurs_compares": comparable}
+    score = round(100.0 * above / comparable, 2) if comparable else None
+    return {"score": score, "status": "OK" if comparable else "NO_BENCHMARK", "comparaisons": comparisons, "indicateurs_compares": comparable}
 
 
 # --- Agrégation et grille de décision ---
 
 def compute_global_score(axe1_score: float, axe2_score: float, axe3_score: float) -> float:
-    """Moyenne pondérée : Axe 1 75 %, Axe 2 15 %, Axe 3 10 %."""
+    """Moyenne pondérée : Axe 1 75 %, Axe 2 15 %, Axe 3 10 % (score FINAL uniquement)."""
     return (axe1_score * 0.75) + (axe2_score * 0.15) + (axe3_score * 0.10)
+
+
+def compute_scores(
+    financial_score: float | None,
+    behavioral_score: float | None,
+    sector_score: float | None,
+    policy=None,
+) -> dict:
+    from app.domain.scoring_policy import default_policy
+
+    pol = policy or default_policy()
+    fw, bw, sw = float(pol.financial_weight), float(pol.behavioral_weight), float(pol.sector_weight)
+    missing: list[str] = []
+    if financial_score is None:
+        missing.append("financial")
+    if behavioral_score is None:
+        missing.append("behavioral")
+    if sector_score is None:
+        missing.append("sector")
+    if financial_score is None:
+        return {
+            "score_status": "NOT_CALCULABLE",
+            "financial_score": None,
+            "behavioral_score": behavioral_score,
+            "sector_score": sector_score,
+            "partial_score": None,
+            "final_score": None,
+            "available_weight": 0.0,
+            "missing_axes": missing,
+            "classe": None,
+            "algorithmic_recommendation": None,
+            "decision_label": None,
+        }
+    if not missing:
+        final = round(compute_global_score(financial_score, behavioral_score, sector_score), 2)
+        grid = map_score_to_decision(final)
+        return {
+            "score_status": "FINAL",
+            "financial_score": financial_score,
+            "behavioral_score": behavioral_score,
+            "sector_score": sector_score,
+            "partial_score": final,
+            "final_score": final,
+            "available_weight": fw + bw + sw,
+            "missing_axes": [],
+            "classe": grid["classe"],
+            "algorithmic_recommendation": grid["recommandation"],
+            "decision_label": grid["decision"],
+        }
+    available = fw
+    partial = financial_score * fw
+    if behavioral_score is not None:
+        available += bw
+        partial += behavioral_score * bw
+    if sector_score is not None:
+        available += sw
+        partial += sector_score * sw
+    partial_score = round(partial / available, 2) if available else None
+    return {
+        "score_status": "PARTIAL",
+        "financial_score": financial_score,
+        "behavioral_score": behavioral_score,
+        "sector_score": sector_score,
+        "partial_score": partial_score,
+        "final_score": None,
+        "available_weight": available,
+        "missing_axes": missing,
+        "classe": None,
+        "algorithmic_recommendation": None,
+        "decision_label": None,
+    }
 
 
 DECISION_GRID = [

@@ -48,6 +48,69 @@ def resolve_tesseract_cmd(explicit: str | None = None) -> str:
     )
 
 
+def _has_traineddata(directory: Path) -> bool:
+    if not directory.is_dir():
+        return False
+    return any(directory.glob("*.traineddata"))
+
+
+def resolve_tessdata_dir(tesseract_cmd: str) -> Path | None:
+    candidates: list[Path] = []
+    env = os.getenv("TESSDATA_PREFIX", "").strip()
+    if env:
+        candidates.append(Path(env))
+    parent = Path(tesseract_cmd).resolve().parent
+    candidates.extend(
+        [
+            parent / "tessdata",
+            Path("/usr/share/tesseract-ocr/5/tessdata"),
+            Path("/usr/share/tesseract-ocr/4.00/tessdata"),
+            Path("/usr/share/tesseract-ocr/tessdata"),
+        ]
+    )
+    for path in candidates:
+        if _has_traineddata(path):
+            return path
+    return None
+
+
+def resolve_ocr_language(tesseract_cmd: str, tessdata: Path | None = None) -> str:
+    available: set[str] = set()
+    if tessdata is not None:
+        available = {path.stem for path in tessdata.glob("*.traineddata") if path.stem != "osd"}
+    if not available:
+        try:
+            env = os.environ.copy()
+            if tessdata is not None:
+                env["TESSDATA_PREFIX"] = str(tessdata)
+            listed = subprocess_list_langs(tesseract_cmd, env)
+            available = set(listed)
+        except Exception:
+            available = set()
+    preferred = ["fra", "eng"]
+    chosen = [lang for lang in preferred if lang in available]
+    if chosen:
+        return "+".join(chosen)
+    if available:
+        return "+".join(sorted(available))
+    return "eng"
+
+
+def subprocess_list_langs(tesseract_cmd: str, env: dict[str, str]) -> list[str]:
+    import subprocess
+
+    result = subprocess.run(
+        [tesseract_cmd, "--list-langs"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+        env=env,
+    )
+    lines = [line.strip() for line in result.stdout.splitlines()[1:] if line.strip()]
+    return lines
+
+
 def extractor_path() -> Path:
     env = os.getenv("WFB_V6_EXTRACTOR", "").strip()
     here = Path(__file__).resolve()
@@ -99,22 +162,19 @@ def run_v6_extractor(
     """Exécute FinancialPDFExtractor.extract tel quel (jobs=1 dans l'API)."""
     module = load_extractor()
     tesseract_cmd = resolve_tesseract_cmd()
-    tessdata_candidates = [
-        Path(os.getenv("TESSDATA_PREFIX", "")),
-        Path(tesseract_cmd).resolve().parent / "tessdata",
-        Path("/usr/share/tesseract-ocr/5/tessdata"),
-        Path("/usr/share/tesseract-ocr/4.00/tessdata"),
-        Path("/usr/share/tesseract-ocr/tessdata"),
-    ]
-    for tessdata in tessdata_candidates:
-        if tessdata and tessdata.is_dir():
-            os.environ.setdefault("TESSDATA_PREFIX", str(tessdata))
-            break
-    config_kwargs: dict[str, Any] = {"ocr": "auto", "tesseract_cmd": tesseract_cmd}
+    tessdata = resolve_tessdata_dir(tesseract_cmd)
+    if tessdata is not None:
+        os.environ["TESSDATA_PREFIX"] = str(tessdata)
+    ocr_language = resolve_ocr_language(tesseract_cmd, tessdata)
+    config_kwargs: dict[str, Any] = {
+        "ocr": "auto",
+        "tesseract_cmd": tesseract_cmd,
+        "ocr_language": ocr_language,
+    }
+    logger.info("Extracteur V6 — Tesseract %s tessdata=%s langs=%s", tesseract_cmd, tessdata, ocr_language)
     if ollama_url:
         config_kwargs["ollama_url"] = ollama_url
     config = module.Config(**config_kwargs)
-    logger.info("Extracteur V6 — Tesseract %s", tesseract_cmd)
     root = Path(output_root) if output_root else Path(tempfile.mkdtemp(prefix="wfb-v6-"))
     extractor = module.FinancialPDFExtractor(output_root=root, config=config, jobs=1)
     logger.info("Extracteur V6 — %s (pages=%s)", pdf_path.name, pages or "toutes")

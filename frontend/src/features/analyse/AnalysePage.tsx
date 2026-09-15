@@ -12,8 +12,8 @@ import { SyntheseTab } from '@/features/analyse/components/tabs/SyntheseTab'
 import { BienTab } from '@/features/analyse/components/tabs/BienTab'
 import { RatiosTab } from '@/features/analyse/components/tabs/RatiosTab'
 import { FactorielleTab } from '@/features/analyse/components/tabs/FactorielleTab'
-import { ComportementTab } from '@/features/analyse/components/tabs/ComportementTab'
-import { BenchmarkTab } from '@/features/analyse/components/tabs/BenchmarkTab'
+import { ComportementTab as BankingBehaviorTab } from '@/features/analyse/components/tabs/ComportementTab'
+import { SectorAnalysisTab } from '@/features/analyse/components/tabs/SectorAnalysisTab'
 import { MemoTab } from '@/features/analyse/components/tabs/MemoTab'
 import { FiscalTab } from '@/features/analyse/components/tabs/FiscalTab'
 import { CapitalTab } from '@/features/analyse/components/tabs/CapitalTab'
@@ -38,9 +38,17 @@ export function AnalysePage() {
           <>
             <AnalyseHeader
               header={workspace.data.header}
-              score={workspace.data.scoring.scoreRaw ?? workspace.data.scoring.score}
-              classe={workspace.data.scoring.classe}
-              provisional={workspace.data.scoring.provisional || workspace.data.analysisStale}
+              score={
+                workspace.data.scoring.scoreStatus === 'FINAL'
+                  ? (workspace.data.scoring.finalScore ?? workspace.data.scoring.score)
+                  : (workspace.data.scoring.partialScore ?? workspace.data.scoring.scoreRaw ?? workspace.data.scoring.score)
+              }
+              classe={workspace.data.scoring.scoreStatus === 'FINAL' ? workspace.data.scoring.classe : null}
+              provisional={workspace.data.scoring.provisional || workspace.data.analysisStale || workspace.data.scoring.scoreStatus === 'PARTIAL'}
+              scoreStatus={workspace.data.scoring.scoreStatus}
+              decisionEligibility={workspace.decisionEligibility}
+              decisionBlockingReasons={workspace.decisionBlockingReasons}
+              onOpenEligibility={() => workspace.setTab('qualite')}
               decision={workspace.decision}
               decisionTime={workspace.decisionTime}
               decisionBusy={workspace.decisionBusy}
@@ -73,6 +81,14 @@ export function AnalysePage() {
               {workspace.data.analysisStale && (
                 <div className="mx-6 mt-3 rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12.5px] text-amber-900">
                   {workspace.data.staleMessage || 'Le document financier a changé. Relancez l’analyse.'}
+                </div>
+              )}
+              {workspace.decisionError && (
+                <div className="mx-6 mt-3 rounded-[10px] border border-red-200 bg-red-50 px-4 py-2.5 text-[12.5px] text-red-800">
+                  <div>{workspace.decisionError}</div>
+                  {(workspace.decisionBlockingReasons || []).map((reason) => (
+                    <div key={reason}>{reason}</div>
+                  ))}
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 px-6 py-4 lg:grid-cols-[390px_1fr]">
@@ -110,6 +126,7 @@ export function AnalysePage() {
                       quality={workspace.data.quality}
                       readiness={workspace.data.readiness}
                       controls={workspace.data.controls}
+                      eligibility={workspace.decisionEligibility}
                     />
                   )}
                   {workspace.tab === 'bien' && <BienTab bien={workspace.data.bien} />}
@@ -128,14 +145,20 @@ export function AnalysePage() {
                     />
                   )}
                   {workspace.tab === 'comportement' && (
-                    <ComportementTab comportement={workspace.data.comportement} />
+                    <BankingBehaviorTab comportement={workspace.data.comportement} />
                   )}
-                  {workspace.tab === 'benchmark' && <BenchmarkTab benchmark={workspace.data.benchmark} />}
+                  {workspace.tab === 'benchmark' && (
+                    <SectorAnalysisTab
+                      data={workspace.data.sectorAnalysis}
+                      dossierId={workspace.data.header.id}
+                    />
+                  )}
                   {workspace.tab === 'memo' && (
                     <MemoTab
                       memo={workspace.data.memo}
                       memoSigned={workspace.memoSigned}
                       onToggleSign={workspace.toggleMemoSign}
+                      busy={workspace.memoBusy}
                     />
                   )}
                 </div>

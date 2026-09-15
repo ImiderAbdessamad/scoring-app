@@ -6,7 +6,9 @@ class EntreprisePayload(BaseModel):
     ice: str
     raisonSociale: str
     rc: str = ""
+    identifiantFiscal: str = ""
     secteur: str = ""
+    secteurRaw: str = ""
     documentNames: list[str] = Field(default_factory=list)
 
     @field_validator("raisonSociale")
@@ -91,6 +93,8 @@ class StoredFileMeta(BaseModel):
     size: int
     contentType: str
     category: str
+    sha256: str | None = None
+    version: int = 1
 
 
 class StoredDossierRecord(BaseModel):
@@ -107,7 +111,11 @@ class StoredDossierRecord(BaseModel):
     urgency: str | None = None
     receivedLabel: str | None = None
     ice: str
+    identifiantFiscal: str = ""
     rc: str = ""
+    sectorRaw: str | None = None
+    sectorNormalized: str | None = None
+    benchmarkSectorCode: str | None = None
     nature: str
     valeurBien: float
     apport: float

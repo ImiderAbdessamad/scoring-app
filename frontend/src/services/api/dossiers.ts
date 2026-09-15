@@ -1,5 +1,5 @@
 import { USE_MOCK } from '@/config/env'
-import { apiGet, apiPost, apiPostForm } from '@/services/api/client'
+import { ApiError, apiGet, apiPost, apiPostForm } from '@/services/api/client'
 import { formatDateShort } from '@/lib/format'
 import { isAllowedUpload, uploadRejectMessage } from '@/lib/uploadTypes'
 import {
@@ -45,7 +45,9 @@ export function toCreatePayload(form: CreateDossierFormState): CreateDossierPayl
       ice: form.entreprise.ice.replace(/\s/g, ''),
       raisonSociale: form.entreprise.raisonSociale.trim(),
       rc: form.entreprise.rc.trim(),
+      identifiantFiscal: form.entreprise.identifiantFiscal.trim(),
       secteur: resolveSecteur(form.entreprise),
+      secteurRaw: resolveSecteur(form.entreprise),
       documentNames: form.entreprise.documents.map((d) => d.name),
     },
     financement: {
@@ -204,8 +206,9 @@ export async function fetchDossierDetail(id: string): Promise<DossierDetail | nu
   }
   try {
     return await apiGet<DossierDetail>(`/dossiers/${encodeURIComponent(id)}/detail`)
-  } catch {
-    return null
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
   }
 }
 
@@ -295,6 +298,7 @@ async function persistDecision(
   id: string,
   mockStatus: DossierStatus,
   path: string,
+  body: { reason?: string; comment?: string } = {},
 ): Promise<Dossier> {
   if (USE_MOCK) {
     await delay(180)
@@ -302,21 +306,40 @@ async function persistDecision(
     if (!updated) throw new Error('Dossier introuvable')
     return updated
   }
-  const res = await apiPost<Dossier>(path)
+  const res = await apiPost<Dossier>(path, body)
   notifyDossierStore()
   return res
 }
 
-export function approveDossier(id: string): Promise<Dossier> {
-  return persistDecision(id, 'approved', `/dossiers/${encodeURIComponent(id)}/approve`)
+export function approveDossier(id: string, body?: { reason?: string; comment?: string }): Promise<Dossier> {
+  return persistDecision(id, 'approved', `/dossiers/${encodeURIComponent(id)}/approve`, body)
 }
 
-export function rejectDossier(id: string): Promise<Dossier> {
-  return persistDecision(id, 'rejected', `/dossiers/${encodeURIComponent(id)}/reject`)
+export function rejectDossier(id: string, body?: { reason?: string; comment?: string }): Promise<Dossier> {
+  return persistDecision(id, 'rejected', `/dossiers/${encodeURIComponent(id)}/reject`, body)
 }
 
-export function reserveDossier(id: string): Promise<Dossier> {
-  return persistDecision(id, 'reserved', `/dossiers/${encodeURIComponent(id)}/reserve`)
+export function reserveDossier(id: string, body?: { reason?: string; comment?: string }): Promise<Dossier> {
+  return persistDecision(id, 'reserved', `/dossiers/${encodeURIComponent(id)}/reserve`, body)
+}
+
+export async function fetchDecisionEligibility(id: string) {
+  return apiGet(`/dossiers/${encodeURIComponent(id)}/decision-eligibility`)
+}
+
+export async function fetchMemos(id: string) {
+  return apiGet<Array<{ id: string; status: string; signedAt?: string | null }>>(`/dossiers/${encodeURIComponent(id)}/memos`)
+}
+
+export async function createMemo(id: string, content: Record<string, unknown> = {}) {
+  return apiPost<{ id: string; status: string }>(`/dossiers/${encodeURIComponent(id)}/memos`, { content })
+}
+
+export async function signMemo(id: string, memoId: string) {
+  return apiPost(`/dossiers/${encodeURIComponent(id)}/memos/${encodeURIComponent(memoId)}/sign`, {
+    signed_by: 'Analyste',
+    signed_role: 'analyste',
+  })
 }
 
 export function cancelDossierDecision(id: string): Promise<Dossier> {

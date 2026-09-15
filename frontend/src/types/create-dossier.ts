@@ -54,7 +54,9 @@ export interface CreateDossierPayload {
     ice: string
     raisonSociale: string
     rc: string
+    identifiantFiscal: string
     secteur: string
+    secteurRaw: string
     documentNames: string[]
   }
   financement: {

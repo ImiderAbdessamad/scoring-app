@@ -6,9 +6,10 @@ type Props = {
   memo: MemoBlock
   memoSigned: boolean
   onToggleSign: () => void
+  busy?: boolean
 }
 
-export function MemoTab({ memo, memoSigned, onToggleSign }: Props) {
+export function MemoTab({ memo, memoSigned, onToggleSign, busy }: Props) {
   return (
     <Card delay={0.05} className="overflow-hidden p-0">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-wb-line bg-[#FAFBFC] px-6 py-4">
@@ -156,7 +157,8 @@ export function MemoTab({ memo, memoSigned, onToggleSign }: Props) {
           <button
             type="button"
             onClick={onToggleSign}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-wb-ink px-3.5 py-2 text-[12.5px] font-bold text-white transition-[filter] hover:brightness-110"
+            disabled={busy}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-wb-ink px-3.5 py-2 text-[12.5px] font-bold text-white transition-[filter] hover:brightness-110 disabled:opacity-60"
           >
             <PenLine size={14} />
             Signer le mémo
