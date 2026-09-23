@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_BACKEND_ROOT / ".env", override=True)
+# CA interne Wafabail (signe le certificat de Keycloak) : backend/certs en local, /app/certs dans l'image.
+_WAFABAIL_CA = _BACKEND_ROOT / "certs" / "wafabail-root-ca.pem"
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -113,6 +115,25 @@ class Settings:
         "DATA_GOV_MA_CKAN_BASE",
         os.getenv("HCP_CKAN_BASE_URL", "https://data.gov.ma/data/api/3/action"),
     ).rstrip("/")
+
+    # Authentification Keycloak (realm dédié RCC). AUTH_ENABLED=false : utilisateur
+    # de développement fixe, sans token — réservé au poste local.
+    auth_enabled: bool = _flag("AUTH_ENABLED", True)
+    # URL publique : sert à vérifier l'issuer (`iss`) des tokens émis au navigateur.
+    keycloak_url: str = os.getenv(
+        "KEYCLOAK_URL", "https://keycloak.app-dev.wafabail.ma"
+    ).rstrip("/")
+    keycloak_realm: str = os.getenv("KEYCLOAK_REALM", "rcc").strip()
+    keycloak_client_id: str = os.getenv("KEYCLOAK_CLIENT_ID", "rcc-wb").strip()
+    keycloak_required_role: str = os.getenv("KEYCLOAK_REQUIRED_ROLE", "RCC_USER").strip()
+    # URL de téléchargement des clés publiques. Vide : déduite de KEYCLOAK_URL.
+    # Dans le cluster : service interne (http://keycloak.keycloak-dev.svc.cluster.local:8080/...).
+    keycloak_jwks_url: str = os.getenv("KEYCLOAK_JWKS_URL", "").strip()
+    # Bundle PEM de la CA interne Wafabail, requis pour joindre l'URL publique en HTTPS.
+    # Vide : backend/certs/wafabail-root-ca.pem s'il existe, sinon les CA publiques.
+    keycloak_ca_bundle: str = os.getenv("KEYCLOAK_CA_BUNDLE", "").strip() or (
+        str(_WAFABAIL_CA) if _WAFABAIL_CA.exists() else ""
+    )
 
     cors_origins: list[str] = [
         origin.strip()

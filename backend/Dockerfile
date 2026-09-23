@@ -33,6 +33,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY backend/app /app/app
 COPY backend/worker /app/worker
+# CA interne Wafabail : vérification HTTPS de Keycloak (lue par app/core/config.py).
+COPY backend/certs /app/certs
 COPY financial_pdf_extractor-V6_corrected.py /app/financial_pdf_extractor-V6_corrected.py
 
 RUN useradd --create-home --uid 10001 appuser \

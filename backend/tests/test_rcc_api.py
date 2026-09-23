@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.core.security import get_current_user
 from app.main import app
 from app.schemas.analyse import (
     CompanyInfo,
@@ -18,6 +20,22 @@ from app.services.rcc_from_scoring import get_or_import, result_from_workspace
 from app.services.rcc_projection import clean_activite, project_rcc_result
 
 client = TestClient(app)
+
+TEST_USER = {
+    "id": "test-sub",
+    "username": "test.rcc1",
+    "display_name": "Test RCC1",
+    "email": "test.rcc1@rcc.local",
+    "roles": ["RCC_USER"],
+    "initials": "TR",
+}
+
+
+@pytest.fixture(autouse=True)
+def _authenticated():
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def _result() -> ScoringAnalysisResult:
@@ -73,7 +91,7 @@ def _result() -> ScoringAnalysisResult:
 
 def test_rcc_health_and_session():
     assert client.get("/api/v1/rcc/health").json()["status"] == "ok"
-    assert client.get("/api/v1/auth/me").json()["role"] == "analyst"
+    assert client.get("/api/v1/auth/me").json()["display_name"] == "Test RCC1"
     assert client.get("/api/v1/rcc/system/ocr-health").json()["status"] == "online"
 
 

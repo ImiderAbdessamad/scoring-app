@@ -1,4 +1,4 @@
-"""API RCC — pipeline V6 scoring, sans authentification obligatoire."""
+"""API RCC — pipeline V6 scoring. Routes protégées par Keycloak (voir api/v1/router.py)."""
 from __future__ import annotations
 
 import asyncio
@@ -7,11 +7,12 @@ import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app import config
+from app.core.security import get_current_user
 from app.jobs.factory import get_job_dispatcher
 from app.services.analyse_job_store import job_store
 from app.services.rcc_compliance import build_compliance
@@ -28,15 +29,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["RCC"])
 auth_router = APIRouter(prefix="/auth", tags=["RCC session"])
+public_router = APIRouter(tags=["RCC"])
 
 _PIPELINE_LOCK = asyncio.Lock()
 MAX_UPLOAD = 25 * 1024 * 1024
-ANALYST = {
-    "username": "analyste",
-    "display_name": "Analyste RCC",
-    "role": "analyst",
-    "initials": "AR",
-}
 
 
 async def _run_rcc_job(job_id: str) -> None:
@@ -73,18 +69,8 @@ def dossier_payload(dossier) -> dict[str, Any]:
 
 
 @auth_router.get("/me")
-def auth_me() -> dict:
-    return ANALYST
-
-
-@auth_router.post("/login")
-def auth_login() -> dict:
-    return ANALYST
-
-
-@auth_router.post("/logout")
-def auth_logout() -> dict:
-    return {"ok": True}
+def auth_me(user: dict = Depends(get_current_user)) -> dict:
+    return user
 
 
 @router.get("/rcc/system/ocr-health")
@@ -98,7 +84,7 @@ def ocr_health() -> dict:
     }
 
 
-@router.get("/rcc/health")
+@public_router.get("/rcc/health")
 def rcc_health() -> dict:
     return {"status": "ok", "service": "rcc"}
 
@@ -270,7 +256,9 @@ def list_dossiers(
 
 
 @router.post("/rcc/dossiers", status_code=201)
-def create_dossier(payload: DossierCreateRequest) -> dict:
+def create_dossier(
+    payload: DossierCreateRequest, user: dict = Depends(get_current_user)
+) -> dict:
     existing = rcc_dossier_store.find_by_job(payload.job_id)
     if existing is not None:
         return dossier_payload(existing)
@@ -285,7 +273,7 @@ def create_dossier(payload: DossierCreateRequest) -> dict:
         scoring_result=job.result,
         filename=job.filename,
         pdf_bytes=pdf_bytes,
-        actor=ANALYST["display_name"],
+        actor=user["display_name"],
         client_name=payload.client_name,
         ice=payload.ice,
         credit_amount=payload.credit_amount,
@@ -313,9 +301,11 @@ def get_dossier(dossier_id: str) -> dict:
 
 
 @router.patch("/rcc/dossiers/{dossier_id}")
-def patch_dossier(dossier_id: str, payload: DossierPatchRequest) -> dict:
+def patch_dossier(
+    dossier_id: str, payload: DossierPatchRequest, user: dict = Depends(get_current_user)
+) -> dict:
     dossier = rcc_dossier_store.patch(
-        dossier_id, payload.model_dump(exclude_unset=True), ANALYST["display_name"]
+        dossier_id, payload.model_dump(exclude_unset=True), user["display_name"]
     )
     if dossier is None:
         raise HTTPException(status_code=404, detail="Dossier introuvable.")
@@ -330,11 +320,15 @@ def delete_dossier(dossier_id: str) -> dict:
 
 
 @router.put("/rcc/dossiers/{dossier_id}/overrides")
-def save_overrides(dossier_id: str, payload: FieldOverrideBatchRequest) -> dict:
+def save_overrides(
+    dossier_id: str,
+    payload: FieldOverrideBatchRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
     dossier = rcc_dossier_store.save_overrides(
         dossier_id,
         [item.model_dump() for item in payload.overrides],
-        ANALYST["display_name"],
+        user["display_name"],
     )
     if dossier is None:
         raise HTTPException(status_code=404, detail="Dossier introuvable.")
@@ -342,7 +336,9 @@ def save_overrides(dossier_id: str, payload: FieldOverrideBatchRequest) -> dict:
 
 
 @router.post("/rcc/dossiers/{dossier_id}/attach")
-def attach_dossier(dossier_id: str, payload: DossierCreateRequest) -> dict:
+def attach_dossier(
+    dossier_id: str, payload: DossierCreateRequest, user: dict = Depends(get_current_user)
+) -> dict:
     _dossier_or_404(dossier_id)
     job = _completed_job(payload.job_id)
     pdf_bytes = job.pdf_bytes
@@ -354,7 +350,7 @@ def attach_dossier(dossier_id: str, payload: DossierCreateRequest) -> dict:
         scoring_result=job.result,
         filename=job.filename,
         pdf_bytes=pdf_bytes,
-        actor=ANALYST["display_name"],
+        actor=user["display_name"],
     )
     # Keep requested id: if create made a new one, patch isn't needed — attach should update existing.
     existing = rcc_dossier_store.get(dossier_id)
