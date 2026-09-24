@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatSectorAmount, formatSectorPeriod, formatSignedPct } from '@/lib/sectorFormat'
+import { formatSectorAmount, formatSectorPeriod } from '@/lib/sectorFormat'
 
 describe('labels analyse', () => {
   it('Analyse sectorielle et Comportement bancaire', () => {

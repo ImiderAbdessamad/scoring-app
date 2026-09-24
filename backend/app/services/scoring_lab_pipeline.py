@@ -1094,7 +1094,9 @@ def build_result_from_v6(v6: dict[str, Any], filename: str) -> ScoringAnalysisRe
         warnings.append("Quality gate : revue manuelle requise — le score n'est pas une décision automatique.")
         result.warnings = warnings
         result.extraction.warnings = warnings
-    return result
+    from app.services.ia_clients_service import enrich_result_with_ia_client
+
+    return enrich_result_with_ia_client(result)
 
 
 def build_result(
@@ -1150,18 +1152,22 @@ def build_result(
         warnings=warnings,
     )
 
-    return ScoringAnalysisResult(
-        document=document,
-        extraction=extraction,
-        fields=fields,
-        completeness_pct=round(100.0 * found / max(total, 1), 1),
-        warnings=warnings,
-        controls=controls,
-        ratio_inputs=ratio_inputs,
-        ratios=ratios,
-        axes=axes,
-        decision=decision,
-        years=years,
+    from app.services.ia_clients_service import enrich_result_with_ia_client
+
+    return enrich_result_with_ia_client(
+        ScoringAnalysisResult(
+            document=document,
+            extraction=extraction,
+            fields=fields,
+            completeness_pct=round(100.0 * found / max(total, 1), 1),
+            warnings=warnings,
+            controls=controls,
+            ratio_inputs=ratio_inputs,
+            ratios=ratios,
+            axes=axes,
+            decision=decision,
+            years=years,
+        )
     )
 
 

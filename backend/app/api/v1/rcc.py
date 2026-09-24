@@ -221,6 +221,18 @@ class FieldOverrideBatchRequest(BaseModel):
     overrides: list[FieldOverrideRequest] = Field(min_length=1)
 
 
+class BilansBatchRequest(BaseModel):
+    dossier_ids: list[str] = Field(min_length=1, max_length=100)
+    flag_wlist: Optional[str] = "O"
+    code_statut: Optional[str] = "EXPL"
+
+
+class BilansPushOptions(BaseModel):
+    flag_wlist: Optional[str] = "O"
+    code_statut: Optional[str] = "EXPL"
+    dry_run: bool = False
+
+
 @router.get("/rcc/dossiers")
 def list_dossiers(
     status: Optional[str] = Query(default=None),
@@ -393,6 +405,187 @@ def export_dossier_json(dossier_id: str) -> JSONResponse:
         content=payload,
         headers={"Content-Disposition": f'attachment; filename="RCC-{dossier.id}.json"'},
     )
+
+
+def _prepare_bilan_payload(dossier, *, flag_wlist: str = "O", code_statut: str = "EXPL") -> dict[str, Any]:
+    from app.services.ia_clients_service import build_bilan_from_dossier
+
+    payload = build_bilan_from_dossier(dossier)
+    if flag_wlist:
+        payload["flagWlist"] = flag_wlist.strip().upper()[:1] or "O"
+    if code_statut:
+        payload["codeStatut"] = code_statut.strip() or "EXPL"
+    return payload
+
+
+def _record_bilans_push(dossier, *, status: str, payload: dict | None, response: Any = None, error: str | None = None):
+    from datetime import datetime, timezone
+
+    info = {
+        "status": status,
+        "pushed_at": datetime.now(timezone.utc).isoformat(),
+        "noRcTiers": (payload or {}).get("noRcTiers"),
+        "annee": (payload or {}).get("annee"),
+        "error": error,
+        "response": response if isinstance(response, (dict, list, str, int, float, bool)) or response is None else str(response)[:500],
+    }
+    rcc_dossier_store.put(dossier)
+    rcc_dossier_store.mark_bilans_push(dossier.id, info)
+    dossier.bilans_push = info
+    return info
+
+
+@router.post("/rcc/dossiers/{dossier_id}/bilans/push")
+def push_dossier_bilan(
+    dossier_id: str,
+    body: BilansPushOptions | None = None,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Envoie le bilan RCC d'un dossier vers POST /ia-clients/bilans.
+
+    `noRcTiers` = n° tiers issu de /ia-clients/search (champ `tiers`), pas le RC.
+    """
+    from app.services.ia_clients_service import post_bilan
+
+    opts = body or BilansPushOptions()
+    dossier = _dossier_or_404(dossier_id)
+    try:
+        payload = _prepare_bilan_payload(
+            dossier, flag_wlist=opts.flag_wlist or "O", code_statut=opts.code_statut or "EXPL"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if opts.dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "dossier_id": dossier.id,
+            "payload": payload,
+            "message": f"Aperçu prêt · n° tiers {payload.get('noRcTiers')}",
+        }
+
+    try:
+        upstream = post_bilan(payload)
+    except Exception as exc:
+        _record_bilans_push(dossier, status="error", payload=payload, error=str(exc))
+        logger.exception("Envoi bilan IA échoué pour %s", dossier_id)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    info = _record_bilans_push(dossier, status="sent", payload=payload, response=upstream)
+    rcc_dossier_store._audit.append(
+        {
+            "kind": "event",
+            "timestamp": info["pushed_at"],
+            "actor": user.get("display_name") or user.get("username") or "analyste",
+            "dossier_id": dossier.id,
+            "client_name": dossier.client_name,
+            "field_code": None,
+            "field_label": None,
+            "before": None,
+            "after": payload.get("noRcTiers"),
+            "action": f"Bilan envoyé (tiers {payload.get('noRcTiers')})",
+        }
+    )
+    return {
+        "ok": True,
+        "dossier_id": dossier.id,
+        "payload": payload,
+        "upstream": upstream,
+        "bilans_push": info,
+        "message": f"Bilan transmis · n° tiers {payload.get('noRcTiers')}",
+    }
+
+
+@router.post("/rcc/dossiers/bilans/batch")
+def push_dossiers_bilans_batch(
+    body: BilansBatchRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Envoie plusieurs bilans via POST /ia-clients/bilans/batch."""
+    from app.services.ia_clients_service import post_bilans_batch
+
+    prepared: list[tuple[Any, dict[str, Any]]] = []
+    results: list[dict[str, Any]] = []
+
+    for dossier_id in body.dossier_ids:
+        try:
+            dossier = _dossier_or_404(dossier_id)
+            payload = _prepare_bilan_payload(
+                dossier,
+                flag_wlist=body.flag_wlist or "O",
+                code_statut=body.code_statut or "EXPL",
+            )
+            prepared.append((dossier, payload))
+            results.append(
+                {
+                    "dossier_id": dossier.id,
+                    "ok": True,
+                    "staged": True,
+                    "tiers": payload.get("noRcTiers"),
+                    "annee": payload.get("annee"),
+                }
+            )
+        except HTTPException as exc:
+            results.append(
+                {
+                    "dossier_id": dossier_id,
+                    "ok": False,
+                    "error": exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+                }
+            )
+        except ValueError as exc:
+            results.append({"dossier_id": dossier_id, "ok": False, "error": str(exc)})
+
+    if not prepared:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Aucun dossier prêt à l'envoi (n° tiers ou données manquants).",
+                "results": results,
+            },
+        )
+
+    payloads = [payload for _, payload in prepared]
+    try:
+        upstream = post_bilans_batch(payloads)
+    except Exception as exc:
+        for dossier, payload in prepared:
+            _record_bilans_push(dossier, status="error", payload=payload, error=str(exc))
+        logger.exception("Envoi bilans/batch IA échoué (%s dossiers)", len(prepared))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    actor = user.get("display_name") or user.get("username") or "analyste"
+    for dossier, payload in prepared:
+        info = _record_bilans_push(dossier, status="sent", payload=payload, response=upstream)
+        rcc_dossier_store._audit.append(
+            {
+                "kind": "event",
+                "timestamp": info["pushed_at"],
+                "actor": actor,
+                "dossier_id": dossier.id,
+                "client_name": dossier.client_name,
+                "field_code": None,
+                "field_label": None,
+                "before": None,
+                "after": payload.get("noRcTiers"),
+                "action": f"Bilan batch envoyé (tiers {payload.get('noRcTiers')})",
+            }
+        )
+        for row in results:
+            if row.get("dossier_id") == dossier.id and row.get("ok"):
+                row["staged"] = False
+                row["sent"] = True
+                row["bilans_push"] = info
+
+    return {
+        "ok": True,
+        "sent": len(prepared),
+        "failed": sum(1 for row in results if not row.get("ok")),
+        "results": results,
+        "upstream": upstream,
+        "message": f"{len(prepared)} bilan(s) transmis via /ia-clients/bilans/batch",
+    }
 
 
 @router.get("/rcc/audit")

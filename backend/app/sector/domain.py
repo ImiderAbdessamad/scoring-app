@@ -209,6 +209,9 @@ class SectorInfo(BaseModel):
     mappingStatus: MappingStatus = "UNMATCHED"
     mappingType: MappingMethod | None = None
     validated: bool = False
+    sourceId: str | None = None
+    sourceLabel: str | None = None
+    sourceCode: str | None = None
 
 
 class SectorAnalysisResult(BaseModel):

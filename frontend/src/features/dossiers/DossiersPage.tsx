@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { GradeBadge, ScorePill } from '@/components/ui/ScorePill'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { USE_MOCK } from '@/config/env'
 import { LIST_FILTERS, dateFromDaysAgo, formatAmountMad } from '@/lib/format'
@@ -245,13 +244,12 @@ export function DossiersPage() {
         <Card delay={0.1} className="overflow-hidden">
           <div className="wb-scroll overflow-x-auto">
             <div className="min-w-[1080px]">
-              <div className="grid grid-cols-[140px_1fr_120px_112px_60px_104px_150px_100px_88px_32px] gap-2 border-b border-wb-line bg-[#FAFBFC] px-4 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.04em] text-wb-faint">
+              <div className="grid grid-cols-[140px_1fr_120px_112px_60px_150px_100px_88px_32px] gap-2 border-b border-wb-line bg-[#FAFBFC] px-4 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.04em] text-wb-faint">
                 <div>Référence</div>
                 <div>Entreprise</div>
                 <div>Secteur</div>
                 <div>Montant</div>
                 <div>Durée</div>
-                <div>Score · Note</div>
                 <div>Statut</div>
                 <div>Analyste</div>
                 <div>Reçu</div>
@@ -285,7 +283,7 @@ export function DossiersPage() {
                   >
                     <Link
                       to={`/analyse/${d.id}`}
-                      className="grid grid-cols-[140px_1fr_120px_112px_60px_104px_150px_100px_88px_32px] items-center gap-2 border-b border-[#F1F2F4] px-4 py-3.5 text-[13px] no-underline transition-colors hover:bg-[#FBFCFD] last:border-b-0"
+                      className="grid grid-cols-[140px_1fr_120px_112px_60px_150px_100px_88px_32px] items-center gap-2 border-b border-[#F1F2F4] px-4 py-3.5 text-[13px] no-underline transition-colors hover:bg-[#FBFCFD] last:border-b-0"
                     >
                       <div>
                         <div className="font-mono text-[12.5px] font-bold text-wb-accent">
@@ -303,10 +301,6 @@ export function DossiersPage() {
                         {formatAmountMad(d.amount)}
                       </div>
                       <div className="tabular-nums text-wb-muted">{d.duration}m</div>
-                      <div className="flex items-center gap-1.5">
-                        <ScorePill score={d.score} classe={d.classe} />
-                        <GradeBadge classe={d.classe} />
-                      </div>
                       <div>
                         <StatusBadge status={d.status} />
                         {typeof d.analyseProgressPct === 'number' && d.status === 'analyzing' && (

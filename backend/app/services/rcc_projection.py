@@ -38,10 +38,20 @@ def build_identite(result: ScoringAnalysisResult) -> dict[str, Any]:
     identity = result.document.identity
     company = result.document.company
     exercise = result.document.exercise
-    return {
-        "identifiant_fiscal": _pick(identity.identifiant_fiscal, company.identifiant_fiscal),
-        "ice": _pick(identity.ice, company.ice),
-        "raison_sociale": _pick(identity.raison_sociale, company.raison_sociale),
+    lookup = result.client_lookup
+    primary = lookup.primary if lookup else None
+    payload = {
+        "identifiant_fiscal": _pick(
+            identity.identifiant_fiscal,
+            company.identifiant_fiscal,
+            primary.identifiant_fiscal if primary else None,
+        ),
+        "ice": _pick(identity.ice, company.ice, primary.ice if primary else None),
+        "raison_sociale": _pick(
+            identity.raison_sociale,
+            company.raison_sociale,
+            primary.raison_sociale if primary else None,
+        ),
         "taxe_professionnelle": _pick(identity.taxe_professionnelle, company.taxe_professionnelle),
         "ville": _pick(identity.ville, company.ville),
         "adresse": _pick(identity.adresse, company.adresse),
@@ -52,8 +62,15 @@ def build_identite(result: ScoringAnalysisResult) -> dict[str, Any]:
         "declaration_date": _pick(identity.declaration_date, company.declaration_date),
         "declaration_time": _pick(identity.declaration_time, company.declaration_time),
         "reference": _pick(identity.reference, company.reference),
-        "rc": _pick(company.rc),
+        "rc": _pick(company.rc, primary.rc if primary else None),
+        "tiers": _pick(primary.tiers if primary else None),
     }
+    if lookup is not None:
+        payload["client_lookup"] = lookup.model_dump(mode="json")
+        payload["matched_clients"] = [
+            item.model_dump(mode="json") for item in lookup.matches
+        ]
+    return payload
 
 
 def _snake(code: str) -> str:

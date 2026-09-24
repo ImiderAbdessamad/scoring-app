@@ -425,6 +425,38 @@ export function useAnalyseWorkspace(id: string | undefined) {
     [id, input, messages, thinking, data],
   )
 
+  const applySectorUpdate = useCallback(
+    (payload: {
+      sectorLabel: string
+      sectorAnalysis: AnalyseWorkspace['sectorAnalysis']
+    }) => {
+      setData((prev) => {
+        if (!prev) return prev
+        const subtitle = String(prev.header.subtitle || '')
+        const bits = subtitle
+          .split('·')
+          .map((part) => part.trim())
+          .filter(Boolean)
+        const nextSubtitle = bits.length
+          ? [payload.sectorLabel, ...bits.slice(1)].join(' · ')
+          : payload.sectorLabel
+        return {
+          ...prev,
+          sectorAnalysis: payload.sectorAnalysis,
+          header: {
+            ...prev.header,
+            subtitle: nextSubtitle,
+          },
+          benchmark: {
+            ...prev.benchmark,
+            sectorLabel: payload.sectorLabel,
+          },
+        }
+      })
+    },
+    [],
+  )
+
   return {
     data,
     loading,
@@ -460,6 +492,7 @@ export function useAnalyseWorkspace(id: string | undefined) {
     runPipeline,
     sendCopilotMessage,
     setInput,
+    applySectorUpdate,
     liveJob,
   }
 }

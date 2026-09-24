@@ -79,6 +79,26 @@ class CompanyInfo(BaseModel):
     reference: str | None = None
 
 
+class IaClientMatch(BaseModel):
+    """Client Wafabail renvoyé par GET /ia-clients/search."""
+
+    ice: str | None = None
+    tiers: str | None = None
+    rc: str | None = None
+    identifiant_fiscal: str | None = None
+    raison_sociale: str | None = None
+
+
+class ClientLookup(BaseModel):
+    """Enrichissement post-OCR : rapprochement du n° tiers via l'API IA."""
+
+    status: Literal["MATCHED", "MULTIPLE", "NOT_FOUND", "SKIPPED", "ERROR"] = "SKIPPED"
+    query: dict[str, str] = Field(default_factory=dict)
+    matches: list[IaClientMatch] = Field(default_factory=list)
+    primary: IaClientMatch | None = None
+    message: str | None = None
+
+
 class ExerciseInfo(BaseModel):
     debut: str | None = None
     fin: str | None = None
@@ -353,6 +373,7 @@ class ScoringAnalysisResult(BaseModel):
     readiness: ScoringReadiness = Field(default_factory=ScoringReadiness)
     fiscal_analysis: FiscalAnalysis = Field(default_factory=FiscalAnalysis)
     capital_analysis: CapitalAnalysis = Field(default_factory=CapitalAnalysis)
+    client_lookup: ClientLookup | None = None
     score_raw: Optional[float] = None
 
 

@@ -217,6 +217,8 @@ async def create_dossier(
     sector_raw, sector_normalized, benchmark_code = _sector_fields(
         payload.entreprise.secteurRaw or payload.entreprise.secteur
     )
+    from app.services import sector_source_config
+
     record = StoredDossierRecord(
         id=dossier_id,
         name=payload.entreprise.raisonSociale.strip(),
@@ -224,6 +226,7 @@ async def create_dossier(
         sectorRaw=sector_raw,
         sectorNormalized=sector_normalized,
         benchmarkSectorCode=benchmark_code,
+        sectorSourceId=sector_source_config.get_default_source_id(),
         amount=payload.financement.montantDemande,
         duration=payload.financement.dureeMois,
         score=0,

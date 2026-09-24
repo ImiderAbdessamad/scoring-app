@@ -7,6 +7,7 @@ import { AnalyseHeader } from '@/features/analyse/components/AnalyseHeader'
 import { AgentPipeline } from '@/features/analyse/components/AgentPipeline'
 import { DocumentsPanel } from '@/features/analyse/components/DocumentsPanel'
 import { ExtractionPanel } from '@/features/analyse/components/ExtractionPanel'
+import { ClientLookupPanel } from '@/features/analyse/components/ClientLookupPanel'
 import { CopilotPanel } from '@/features/analyse/components/CopilotPanel'
 import { SyntheseTab } from '@/features/analyse/components/tabs/SyntheseTab'
 import { BienTab } from '@/features/analyse/components/tabs/BienTab'
@@ -101,6 +102,7 @@ export function AnalysePage() {
                     uploadingDocId={workspace.uploadingDocId}
                     onUpload={workspace.uploadDocument}
                   />
+                  <ClientLookupPanel lookup={workspace.data.clientLookup} />
                   <ExtractionPanel
                     extraction={workspace.data.documents.extractions[workspace.selectedDocId]}
                     document={workspace.data.documents.items.find((d) => d.id === workspace.selectedDocId)}
@@ -151,6 +153,7 @@ export function AnalysePage() {
                     <SectorAnalysisTab
                       data={workspace.data.sectorAnalysis}
                       dossierId={workspace.data.header.id}
+                      onSectorUpdated={workspace.applySectorUpdate}
                     />
                   )}
                   {workspace.tab === 'memo' && (

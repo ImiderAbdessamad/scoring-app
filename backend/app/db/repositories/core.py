@@ -83,6 +83,8 @@ class SqlAlchemyDossierRepository:
             mapped["benchmarkSectorCode"] = patch["benchmark_sector_code"]
         if "sector_normalized" in patch:
             mapped["sectorNormalized"] = patch["sector_normalized"]
+        if "sector_source_id" in patch:
+            mapped["sectorSourceId"] = patch["sector_source_id"]
         if "identifiant_fiscal" in patch:
             mapped["identifiantFiscal"] = patch["identifiant_fiscal"]
         if "decisionDate" in patch:

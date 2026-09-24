@@ -7,6 +7,7 @@ import {
   FolderOpen,
   LayoutGrid,
   LineChart,
+  Settings2,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import icon from '@/assets/icon.png'
@@ -38,6 +39,12 @@ const NAV: NavItem[] = [
     label: "Poste d'analyse",
     icon: LineChart,
     match: (p) => p.startsWith('/analyse'),
+  },
+  {
+    to: '/configuration',
+    label: 'Configuration',
+    icon: Settings2,
+    match: (p) => p.startsWith('/configuration'),
   },
 ]
 

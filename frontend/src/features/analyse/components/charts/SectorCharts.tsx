@@ -6,7 +6,7 @@ const ORANGE = '#e85d0c'
 const INK = '#111827'
 const MUTED = '#94a3b8'
 
-function scale(values: Array<number | null>, height: number) {
+function scale(values: Array<number | null | undefined>, height: number) {
   const nums = values.filter((v): v is number => v != null)
   const min = nums.length ? Math.min(...nums, 0) : 0
   const max = nums.length ? Math.max(...nums) : 1
@@ -80,7 +80,7 @@ export function CompanyVsSectorNormalizedChart({ series }: { series: NormalizedS
   const values = series.flatMap((s) => [s.companyIndex, s.sectorIndex])
   const ys = scale(values, h)
   const xs = series.map((_, i) => 24 + (i * (w - 48)) / Math.max(series.length - 1, 1))
-  const line = (key: 'companyIndex' | 'sectorIndex', color: string) =>
+  const line = (key: 'companyIndex' | 'sectorIndex') =>
     series
       .map((s, i) => {
         const v = s[key]
@@ -91,8 +91,8 @@ export function CompanyVsSectorNormalizedChart({ series }: { series: NormalizedS
       .join(' ')
   return (
     <svg viewBox={`0 0 ${w} ${h + 28}`} className="h-[210px] w-full" role="img">
-      <polyline points={line('sectorIndex', ORANGE)} fill="none" stroke={ORANGE} strokeWidth="2.2" />
-      <polyline points={line('companyIndex', INK)} fill="none" stroke={INK} strokeWidth="2.2" />
+      <polyline points={line('sectorIndex')} fill="none" stroke={ORANGE} strokeWidth="2.2" />
+      <polyline points={line('companyIndex')} fill="none" stroke={INK} strokeWidth="2.2" />
       {series.map((s, i) => (
         <text key={s.year} x={xs[i]} y={h + 18} textAnchor="middle" fontSize="11" fill={MUTED}>
           {s.year}

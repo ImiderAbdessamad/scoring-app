@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Layers } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Layers, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import {
   CompanyVsSectorNormalizedChart,
@@ -9,18 +9,44 @@ import {
   VaGrowthBarsChart,
 } from '@/features/analyse/components/charts/SectorCharts'
 import { formatSectorAmount, formatSectorPeriod, formatSignedPct } from '@/lib/sectorFormat'
-import { fetchSectorAnalysis, refreshSectorData } from '@/services/sectors'
+import {
+  fetchHcpBranches,
+  fetchSectorAnalysis,
+  fetchSectorSources,
+  refreshSectorData,
+  saveDossierSectorSource,
+  saveSectorMapping,
+  type HcpBranch,
+  type SectorSourceItem,
+} from '@/services/sectors'
 import type { SectorAnalysisData } from '@/types/analyse'
 
 type Props = {
   data?: SectorAnalysisData | null
   dossierId?: string
+  onSectorUpdated?: (payload: {
+    sectorLabel: string
+    sectorAnalysis: SectorAnalysisData
+  }) => void
 }
 
-export function SectorAnalysisTab({ data, dossierId }: Props) {
+export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
   const [busy, setBusy] = useState(false)
+  const [mappingBusy, setMappingBusy] = useState(false)
+  const [sourceBusy, setSourceBusy] = useState(false)
   const [local, setLocal] = useState(data)
+  const [branches, setBranches] = useState<HcpBranch[]>([])
+  const [sources, setSources] = useState<SectorSourceItem[]>([])
+  const [selectedCode, setSelectedCode] = useState('')
+  const [selectedSourceId, setSelectedSourceId] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
   const analysis = local ?? data
+
+  const activeSourceId =
+    selectedSourceId ||
+    analysis?.sector?.sourceId ||
+    sources.find((s) => s.isDefault)?.id ||
+    'hcp'
 
   useEffect(() => {
     setLocal(data)
@@ -31,7 +57,10 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
     let cancelled = false
     fetchSectorAnalysis(dossierId, 'auto')
       .then((next) => {
-        if (!cancelled) setLocal(next)
+        if (!cancelled) {
+          setLocal(next)
+          if (next.sector?.sourceId) setSelectedSourceId(next.sector.sourceId)
+        }
       })
       .catch(() => {
         /* le workspace reste la source de repli */
@@ -41,17 +70,71 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
     }
   }, [dossierId])
 
-  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchSectorSources()
+      .then((res) => {
+        if (cancelled) return
+        setSources(res.items || [])
+        if (!selectedSourceId) {
+          const pinned = analysis?.sector?.sourceId
+          const fallback = pinned || res.defaultSourceId || res.items.find((i) => i.isDefault)?.id || 'hcp'
+          setSelectedSourceId(fallback)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSources([])
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dossierId])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchHcpBranches(activeSourceId)
+      .then((res) => {
+        if (!cancelled) setBranches(res.items || [])
+      })
+      .catch(() => {
+        if (!cancelled) setBranches([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSourceId])
+
+  useEffect(() => {
+    const code = analysis?.sector?.code || ''
+    setSelectedCode(code)
+  }, [analysis?.sector?.code])
+
+  useEffect(() => {
+    if (analysis?.sector?.sourceId) setSelectedSourceId(analysis.sector.sourceId)
+  }, [analysis?.sector?.sourceId])
+
+  const currentLabel = useMemo(() => {
+    if (selectedCode) {
+      return branches.find((b) => b.code === selectedCode)?.label || analysis?.sector?.label || ''
+    }
+    return analysis?.sector?.label || ''
+  }, [selectedCode, branches, analysis?.sector?.label])
+
+  const sourceLabel =
+    analysis?.sector?.sourceLabel ||
+    sources.find((s) => s.id === activeSourceId)?.shortLabel ||
+    'HCP'
 
   async function refresh() {
     if (!dossierId) return
     setBusy(true)
-    setNotice('Vérification des données HCP...')
+    setNotice(`Vérification des données ${sourceLabel}...`)
     try {
       const result = await refreshSectorData(true)
       const next = await fetchSectorAnalysis(dossierId, 'force')
       setLocal(next)
-      if (result.changed > 0) setNotice('Nouvelles données HCP importées.')
+      if (result.changed > 0) setNotice(`Nouvelles données ${sourceLabel} importées.`)
       else setNotice('Données déjà à jour.')
     } catch {
       setNotice('Vérification impossible — cache local conservé.')
@@ -60,31 +143,132 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
     }
   }
 
+  async function applySourceChange() {
+    if (!dossierId || !selectedSourceId) return
+    if (selectedSourceId === analysis?.sector?.sourceId) return
+    const confirmed = window.confirm(
+      'Changer de source efface le mapping branche actuel (taxonomies isolées) et recalcule l’analyse. Continuer ?',
+    )
+    if (!confirmed) {
+      setSelectedSourceId(analysis?.sector?.sourceId || sources.find((s) => s.isDefault)?.id || 'hcp')
+      return
+    }
+    setSourceBusy(true)
+    setNotice(null)
+    try {
+      const res = await saveDossierSectorSource(dossierId, selectedSourceId)
+      setLocal(res.analysis)
+      setSelectedCode(res.analysis.sector?.code || '')
+      onSectorUpdated?.({
+        sectorLabel: res.analysis.sector?.label || analysis?.sector?.label || '—',
+        sectorAnalysis: res.analysis,
+      })
+      setNotice(res.message)
+    } catch {
+      setNotice('Impossible de changer la source de données.')
+      setSelectedSourceId(analysis?.sector?.sourceId || 'hcp')
+    } finally {
+      setSourceBusy(false)
+    }
+  }
+
+  async function applySectorChange() {
+    if (!dossierId || !selectedCode) return
+    setMappingBusy(true)
+    setNotice(null)
+    try {
+      const res = await saveSectorMapping(dossierId, selectedCode)
+      const next = res.analysis
+      setLocal(next)
+      onSectorUpdated?.({
+        sectorLabel: res.sector || next.sector?.label || currentLabel,
+        sectorAnalysis: next,
+      })
+      setNotice(`Secteur mis à jour : ${res.sector || next.sector?.label || currentLabel}`)
+    } catch {
+      setNotice('Impossible d’enregistrer le nouveau secteur.')
+    } finally {
+      setMappingBusy(false)
+    }
+  }
+
+  const selectableSources = sources.filter((s) => s.selectable || s.id === activeSourceId)
+
+  const sourceEditor =
+    dossierId ? (
+      <SectorSourceEditor
+        sources={selectableSources.length ? selectableSources : sources}
+        selectedSourceId={selectedSourceId || activeSourceId}
+        currentSourceId={analysis?.sector?.sourceId || ''}
+        onChange={setSelectedSourceId}
+        onApply={applySourceChange}
+        busy={sourceBusy}
+      />
+    ) : null
+
+  const mappingEditor =
+    dossierId ? (
+      <SectorMappingEditor
+        branches={branches}
+        selectedCode={selectedCode}
+        currentCode={analysis?.sector?.code || ''}
+        onChange={setSelectedCode}
+        onApply={applySectorChange}
+        busy={mappingBusy}
+        notice={notice}
+        rawActivity={analysis?.sector?.rawActivity}
+        sourceLabel={sourceLabel}
+      />
+    ) : null
+
+  const editors = (
+    <>
+      {sourceEditor}
+      {mappingEditor}
+    </>
+  )
   if (!analysis || analysis.status === 'UNAVAILABLE' || analysis.status === 'NO_DATA' || analysis.status === 'ERROR') {
     return (
-      <Card className="p-5">
-        <div className="text-[13px] font-bold text-slate-900">Analyse sectorielle</div>
-        <p className="m-0 mt-2 text-[13px] text-wb-muted">
-          {analysis?.warnings?.[0] || 'Les données sectorielles publiques ne sont pas disponibles actuellement.'}
-        </p>
-        {dossierId ? (
-          <button type="button" onClick={refresh} className="mt-3 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold">
-            {busy ? 'Vérification des données HCP...' : 'Actualiser'}
-          </button>
-        ) : null}
-      </Card>
+      <div className="flex flex-col gap-4">
+        <Card className="p-5">
+          <div className="text-[13px] font-bold text-slate-900">Analyse sectorielle</div>
+          <p className="m-0 mt-2 text-[13px] text-wb-muted">
+            {analysis?.warnings?.[0] || 'Les données sectorielles publiques ne sont pas disponibles actuellement.'}
+          </p>
+          {dossierId ? (
+            <button
+              type="button"
+              onClick={refresh}
+              className="mt-3 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold"
+            >
+              {busy ? 'Vérification des données HCP...' : 'Actualiser'}
+            </button>
+          ) : null}
+        </Card>
+        {editors}
+      </div>
     )
   }
 
   if (analysis.status === 'MAPPING_REVIEW_REQUIRED' || analysis.status === 'UNMAPPED') {
     return (
-      <Card className="p-5">
-        <div className="text-[13px] font-bold text-slate-900">Analyse sectorielle</div>
-        <p className="m-0 mt-2 text-[13px] text-wb-muted">
-          Le secteur de l’entreprise n’a pas pu être rapproché d’une branche HCP de manière fiable.
-        </p>
-        <p className="m-0 mt-1 text-[12px] text-wb-faint">Classification sectorielle à confirmer.</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        <Card className="p-5">
+          <div className="text-[13px] font-bold text-slate-900">Analyse sectorielle</div>
+          <p className="m-0 mt-2 text-[13px] text-wb-muted">
+            Le secteur de l’entreprise n’a pas pu être rapproché d’une branche HCP de manière fiable.
+          </p>
+          <p className="m-0 mt-1 text-[12px] text-wb-faint">
+            Sélectionnez une branche ci-dessous pour lancer l’analyse sectorielle.
+          </p>
+          {analysis.sector?.rawActivity ? (
+            <p className="m-0 mt-2 text-[12px] text-wb-muted">
+              Activité détectée : <span className="font-semibold text-slate-800">{analysis.sector.rawActivity}</span>
+            </p>
+          ) : null}
+        </Card>
+        {editors}
+      </div>
     )
   }
 
@@ -120,7 +304,9 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
                 </div>
               ) : null}
               <div className="mt-0.5 text-[11.5px] text-wb-faint">
-                Source HCP — Comptes nationaux Base 2014 · Dernière donnée {latestLabel}
+                Source {sourceLabel}
+                {analysis.dataFreshness?.source ? ` (${analysis.dataFreshness.source})` : ''} —
+                Comptes nationaux · Dernière donnée {latestLabel}
                 {analysis.dataFreshness?.lastSyncAt
                   ? ` · Mise à jour locale ${new Date(analysis.dataFreshness.lastSyncAt).toLocaleString('fr-FR')}`
                   : ''}
@@ -146,6 +332,8 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
           </ul>
         ) : null}
       </Card>
+
+      {editors}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
@@ -282,13 +470,141 @@ export function SectorAnalysisTab({ data, dossierId }: Props) {
           type="button"
           disabled={busy}
           onClick={refresh}
-          className="mt-3 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold text-slate-700"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold text-slate-700"
         >
+          <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />
           {busy ? 'Vérification des données HCP...' : 'Actualiser les données'}
         </button>
         {notice ? <p className="m-0 mt-2 text-[12px] text-wb-muted">{notice}</p> : null}
       </Card>
     </div>
+  )
+}
+
+function SectorSourceEditor({
+  sources,
+  selectedSourceId,
+  currentSourceId,
+  onChange,
+  onApply,
+  busy,
+}: {
+  sources: SectorSourceItem[]
+  selectedSourceId: string
+  currentSourceId: string
+  onChange: (id: string) => void
+  onApply: () => void
+  busy: boolean
+}) {
+  const unchanged = Boolean(selectedSourceId) && selectedSourceId === currentSourceId
+  const canApply = Boolean(selectedSourceId) && !unchanged && !busy
+
+  return (
+    <Card className="p-5">
+      <div className="text-[13px] font-bold text-slate-900">Source de données sectorielles</div>
+      <p className="m-0 mt-1 text-[12px] text-wb-muted">
+        Source épinglée pour ce dossier. Un changement efface le mapping branche pour éviter les
+        conflits de taxonomie. Le défaut global se configure dans Configuration.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-wb-faint">Source</span>
+          <select
+            value={selectedSourceId}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={busy || sources.length === 0}
+            className="h-10 w-full rounded-[8px] border border-wb-line bg-white px-3 text-[13px] text-slate-800 outline-none focus:border-wb-accent"
+          >
+            {sources.map((source) => (
+              <option key={source.id} value={source.id} disabled={!source.selectable && source.id !== currentSourceId}>
+                {source.shortLabel} — {source.label}
+                {!source.implemented ? ' (bientôt)' : ''}
+                {source.isDefault ? ' · défaut' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!canApply}
+          onClick={onApply}
+          className="h-10 shrink-0 rounded-[8px] border border-wb-line px-4 text-[12.5px] font-bold text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? 'Changement…' : 'Appliquer la source'}
+        </button>
+      </div>
+    </Card>
+  )
+}
+
+function SectorMappingEditor({
+  branches,
+  selectedCode,
+  currentCode,
+  onChange,
+  onApply,
+  busy,
+  notice,
+  rawActivity,
+  sourceLabel,
+}: {
+  branches: HcpBranch[]
+  selectedCode: string
+  currentCode: string
+  onChange: (code: string) => void
+  onApply: () => void
+  busy: boolean
+  notice: string | null
+  rawActivity?: string | null
+  sourceLabel: string
+}) {
+  const unchanged = Boolean(selectedCode) && selectedCode === currentCode
+  const canApply = Boolean(selectedCode) && !unchanged && !busy
+
+  return (
+    <Card className="p-5">
+      <div className="text-[13px] font-bold text-slate-900">Remplacer / Modifier le secteur</div>
+      <p className="m-0 mt-1 text-[12px] text-wb-muted">
+        Branche de référence ({sourceLabel}). Enregistrement en base + recalcul de l’analyse
+        sectorielle.
+      </p>
+      {rawActivity ? (
+        <p className="m-0 mt-2 text-[11.5px] text-wb-faint">
+          Activité d’origine : <span className="text-slate-700">{rawActivity}</span>
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-wb-faint">
+            Branche {sourceLabel}
+          </span>
+          <select
+            value={selectedCode}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={busy || branches.length === 0}
+            className="h-10 w-full rounded-[8px] border border-wb-line bg-white px-3 text-[13px] text-slate-800 outline-none focus:border-wb-accent"
+          >
+            <option value="">
+              {branches.length ? 'Sélectionner un secteur…' : `Aucune branche pour ${sourceLabel}`}
+            </option>
+            {branches.map((branch) => (
+              <option key={branch.code} value={branch.code}>
+                {branch.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!canApply}
+          onClick={onApply}
+          className="h-10 shrink-0 rounded-[8px] bg-wb-accent px-4 text-[12.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? 'Enregistrement…' : 'Remplacer / Modifier le secteur'}
+        </button>
+      </div>
+      {notice ? <p className="m-0 mt-2 text-[12px] text-wb-muted">{notice}</p> : null}
+    </Card>
   )
 }
 

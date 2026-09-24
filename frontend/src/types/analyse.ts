@@ -33,6 +33,27 @@ export interface AnalyseHeader {
   durationMonths: number
   apportPct: number
   location: string
+  source?: string | null
+  noDemande?: string | null
+  noPv?: string | null
+  tiers?: string | null
+  clientLookupStatus?: 'MATCHED' | 'MULTIPLE' | 'NOT_FOUND' | 'SKIPPED' | 'ERROR' | null
+}
+
+export interface IaClientMatch {
+  ice?: string | null
+  tiers?: string | null
+  rc?: string | null
+  identifiant_fiscal?: string | null
+  raison_sociale?: string | null
+}
+
+export interface ClientLookup {
+  status: 'MATCHED' | 'MULTIPLE' | 'NOT_FOUND' | 'SKIPPED' | 'ERROR'
+  query: Record<string, string>
+  matches: IaClientMatch[]
+  primary?: IaClientMatch | null
+  message?: string | null
 }
 
 export interface PipelineStepMeta {
@@ -538,6 +559,9 @@ export interface SectorAnalysisData {
     mappingStatus?: 'MATCHED' | 'REVIEW_REQUIRED' | 'UNMATCHED'
     mappingType?: string | null
     validated?: boolean
+    sourceId?: string | null
+    sourceLabel?: string | null
+    sourceCode?: string | null
   }
   dataFreshness: {
     status: SectorDataFreshness
@@ -591,6 +615,7 @@ export interface AnalyseWorkspace {
   yearLabels?: [string, string, string] | string[]
   comportement: BehaviourBlock
   sectorAnalysis?: SectorAnalysisData | null
+  clientLookup?: ClientLookup | null
   benchmark: BenchmarkBlock
   memo: MemoBlock
   copilot: CopilotBlock

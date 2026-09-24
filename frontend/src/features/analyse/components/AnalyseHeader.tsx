@@ -7,7 +7,6 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
-import { GradeBadge, ScorePill } from '@/components/ui/ScorePill'
 import { STATUS_META, formatAmountMad } from '@/lib/format'
 import { AnalyseTabs } from '@/features/analyse/components/AnalyseTabs'
 import type { AnalyseHeader as AnalyseHeaderData, AnalyseTabId, DecisionEligibility, DecisionKind } from '@/types/analyse'
@@ -70,10 +69,10 @@ type Props = {
 
 export function AnalyseHeader({
   header,
-  score,
-  classe,
-  provisional,
-  scoreStatus,
+  score: _score,
+  classe: _classe,
+  provisional: _provisional,
+  scoreStatus: _scoreStatus,
   decisionEligibility,
   decisionBlockingReasons,
   onOpenEligibility,
@@ -161,32 +160,11 @@ export function AnalyseHeader({
               <h1 className="m-0 truncate text-[17px] font-extrabold tracking-tight text-slate-900">
                 {header.companyName}
               </h1>
-              <ScorePill
-                score={
-                  scoreStatus === 'FINAL'
-                    ? (Number.isFinite(score) ? score : 0)
-                    : scoreStatus === 'PARTIAL'
-                      ? score
-                      : 0
-                }
-                classe={scoreStatus === 'FINAL' ? classe : null}
-              />
-              {scoreStatus === 'FINAL' ? <GradeBadge classe={classe} /> : null}
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${
-                  scoreStatus === 'NOT_CALCULABLE'
-                    ? 'bg-slate-100 text-slate-600'
-                    : scoreStatus === 'PARTIAL' || provisional
-                      ? 'bg-amber-50 text-amber-800'
-                      : 'bg-emerald-50 text-emerald-700'
-                }`}
-              >
-                {scoreStatus === 'NOT_CALCULABLE'
-                  ? 'Score non calculable'
-                  : scoreStatus === 'PARTIAL' || provisional
-                    ? 'Score provisoire'
-                    : 'Score final'}
-              </span>
+              {header.tiers ? (
+                <span className="rounded-full bg-[#EEF6FF] px-2 py-0.5 text-[10.5px] font-bold text-[#1D4ED8] ring-1 ring-[#BFDBFE]">
+                  Tiers {header.tiers}
+                </span>
+              ) : null}
               {decisionBlockingReasons && decisionBlockingReasons.length > 0 ? (
                 <button type="button" onClick={onOpenEligibility} className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-800">
                   {decisionBlockingReasons.length} vérification(s) manquante(s)

@@ -396,6 +396,13 @@ def scoring_list_summaries() -> list[dict[str, Any]]:
         if rcc_dossier_store.get(record.id) is not None:
             continue
         scoring = (record.analyse or {}).get("scoring") or {}
+        client_lookup = (record.analyse or {}).get("clientLookup") or {}
+        primary = client_lookup.get("primary") if isinstance(client_lookup, dict) else None
+        tiers = None
+        if isinstance(primary, dict):
+            tiers = primary.get("tiers")
+        header = (record.analyse or {}).get("header") or {}
+        tiers = tiers or header.get("tiers")
         items.append(
             {
                 "id": record.id,
@@ -423,9 +430,13 @@ def scoring_list_summaries() -> list[dict[str, Any]]:
                     "identifiant_fiscal": record.identifiantFiscal,
                     "activite": None,
                     "secteur": clean_activite(*_sector_candidates(record)),
+                    "tiers": tiers,
+                    "client_lookup": client_lookup or None,
                 },
                 "identifiant_fiscal": record.identifiantFiscal or None,
                 "activite": None,
+                "tiers": tiers,
+                "client_lookup": client_lookup or None,
                 "origin": "scoring",
             }
         )

@@ -168,6 +168,8 @@ def update_analyse(dossier_id: str, **patch: object) -> StoredDossierRecord | No
                 mapped["benchmarkSectorCode"] = patch["benchmark_sector_code"]
             if "sector_normalized" in patch:
                 mapped["sectorNormalized"] = patch["sector_normalized"]
+            if "sector_source_id" in patch:
+                mapped["sectorSourceId"] = patch["sector_source_id"]
             updated = record.model_copy(update=mapped)
             records[i] = updated
             _save(records)

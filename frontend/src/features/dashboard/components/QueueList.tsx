@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { ScorePill } from '@/components/ui/ScorePill'
 import type { QueueItem } from '@/types/dossier'
 
 type Props = {
@@ -65,7 +64,6 @@ export function QueueList({ items, total }: Props) {
             <div className="font-sans text-[13px] font-bold tabular-nums text-slate-700">
               {qi.amountShort}
             </div>
-            <ScorePill score={qi.score} />
             <Link to={`/analyse/${qi.id}`}>
               <Button variant="soft" className="opacity-90 group-hover:opacity-100">
                 Analyser →

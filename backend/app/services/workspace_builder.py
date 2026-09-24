@@ -84,6 +84,7 @@ def _documents(record: StoredDossierRecord, result: ScoringAnalysisResult | None
         )
         identity_fields = [
             {"label": "Raison sociale", "value": identity.raison_sociale or company.raison_sociale or "—", "source": "Bilan — identification", "confidence": None},
+            {"label": "N° tiers", "value": (result.client_lookup.primary.tiers if result.client_lookup and result.client_lookup.primary else None) or "—", "source": "API IA clients", "confidence": 95 if result.client_lookup and result.client_lookup.primary and result.client_lookup.primary.tiers else 0},
             {"label": "ICE", "value": identity.ice or company.ice or "—", "source": "Bilan — identification", "confidence": None},
             {"label": "Identifiant fiscal", "value": identity.identifiant_fiscal or company.identifiant_fiscal or record.identifiantFiscal or "—", "source": "Bilan — identification", "confidence": None},
             {"label": "Taxe professionnelle", "value": identity.taxe_professionnelle or company.taxe_professionnelle or "—", "source": "Bilan — identification", "confidence": 90 if identity.taxe_professionnelle else 0},
@@ -763,6 +764,7 @@ def _memo(record: StoredDossierRecord, result: ScoringAnalysisResult, scoring: d
         "recommendation": scoring["recommendation"],
         "scoreLine": f"Score {scoring['score']}/100 — {result.decision.get('classe', '')}",
         "clientGrid": [
+            {"label": "N° tiers", "value": (result.client_lookup.primary.tiers if result.client_lookup and result.client_lookup.primary else None) or "—"},
             {"label": "ICE", "value": identity.ice or result.document.company.ice or record.ice or "—"},
             {"label": "Identifiant fiscal", "value": identity.identifiant_fiscal or "—"},
             {"label": "Taxe professionnelle", "value": identity.taxe_professionnelle or "—"},
@@ -858,10 +860,17 @@ def _header(record: StoredDossierRecord, result: ScoringAnalysisResult | None = 
     name = (identity.raison_sociale if identity and identity.raison_sociale else None) or (
         company.raison_sociale if company and company.raison_sociale else None
     ) or record.name
+    tiers = None
+    if result and result.client_lookup and result.client_lookup.primary:
+        tiers = result.client_lookup.primary.tiers
+        if not name and result.client_lookup.primary.raison_sociale:
+            name = result.client_lookup.primary.raison_sociale
     ville = (identity.ville if identity else None) or (company.ville if company else None) or (
         identity.adresse if identity else None
     )
     bits = [record.sector]
+    if tiers:
+        bits.append(f"Tiers {tiers}")
     if ice and ice != "—":
         bits.append(f"ICE {ice}")
     if if_id:
@@ -888,6 +897,8 @@ def _header(record: StoredDossierRecord, result: ScoringAnalysisResult | None = 
         "source": record.source,
         "noDemande": record.noDemande,
         "noPv": record.noPv,
+        "tiers": tiers,
+        "clientLookupStatus": result.client_lookup.status if result and result.client_lookup else None,
     }
 
 
@@ -1054,6 +1065,7 @@ def build_workspace(record: StoredDossierRecord, result: ScoringAnalysisResult) 
         "quality": result.quality.model_dump(),
         "readiness": result.readiness.model_dump(),
         "controls": [item.model_dump() for item in result.controls],
+        "clientLookup": result.client_lookup.model_dump(mode="json") if result.client_lookup else None,
         "analysisFingerprint": analysis_source_fingerprint(record),
         "analysisStale": False,
     }

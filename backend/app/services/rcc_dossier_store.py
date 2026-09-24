@@ -70,6 +70,7 @@ class RccDossier:
     comment: str | None = None
     decided_by: str | None = None
     decided_at: str | None = None
+    bilans_push: dict[str, Any] | None = None
 
     origin: str = "rcc"
 
@@ -105,6 +106,10 @@ class RccDossier:
             "declaration_date": self.identite.get("declaration_date"),
             "declaration_time": self.identite.get("declaration_time"),
             "reference": self.identite.get("reference"),
+            "tiers": self.identite.get("tiers"),
+            "client_lookup": self.identite.get("client_lookup"),
+            "rc": self.identite.get("rc"),
+            "bilans_push": self.bilans_push,
             "origin": self.origin,
         }
 
@@ -279,6 +284,15 @@ class RccDossierStore:
                         "action": STATUS_LABELS.get(dossier.status, dossier.status),
                     }
                 )
+            return dossier
+
+    def mark_bilans_push(self, dossier_id: str, payload: dict[str, Any]) -> RccDossier | None:
+        with self._lock:
+            dossier = self._items.get(dossier_id)
+            if dossier is None:
+                return None
+            dossier.bilans_push = payload
+            dossier.updated_at = _now()
             return dossier
 
     def save_overrides(

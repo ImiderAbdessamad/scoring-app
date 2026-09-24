@@ -87,13 +87,19 @@ class SectorDataRepository:
                 session.expunge(row)
             return rows
 
-    def get_dataset_by_external(self, external_dataset_id: str) -> SectorDatasetModel | None:
+    def get_dataset_by_external(
+        self,
+        external_dataset_id: str,
+        *,
+        source_id: str | None = None,
+    ) -> SectorDatasetModel | None:
         with session_scope() as session:
-            row = session.scalars(
-                select(SectorDatasetModel).where(
-                    SectorDatasetModel.external_dataset_id == external_dataset_id
-                )
-            ).first()
+            stmt = select(SectorDatasetModel).where(
+                SectorDatasetModel.external_dataset_id == external_dataset_id
+            )
+            if source_id:
+                stmt = stmt.where(SectorDatasetModel.source_id == source_id)
+            row = session.scalars(stmt).first()
             if row is None:
                 return None
             session.expunge(row)

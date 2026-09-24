@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, Loader2, RefreshCw, TriangleAlert, Zap } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import { scoreTone } from '@/lib/format'
 import type { PipelineData, PipelineTraceLine } from '@/types/analyse'
 
 type PipelineState = {
@@ -27,7 +26,6 @@ const TRACE_STYLE: Record<PipelineTraceLine['type'], { color: string; icon: type
 }
 
 export function AgentPipeline({ pipeline, state, onRun, runningLabel, idleLabel }: Props) {
-  const tone = scoreTone(state.scoreShown)
   const totalSteps = pipeline.steps.length
 
   return (
@@ -44,15 +42,6 @@ export function AgentPipeline({ pipeline, state, onRun, runningLabel, idleLabel 
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div
-              className="font-mono text-[20px] font-extrabold leading-none tabular-nums"
-              style={{ color: tone.color }}
-            >
-              {state.scoreShown}
-            </div>
-            <div className="text-[10px] uppercase tracking-[0.04em] text-[#6f675e]">Score IA</div>
-          </div>
           <button
             type="button"
             onClick={onRun}

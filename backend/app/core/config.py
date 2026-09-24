@@ -92,6 +92,13 @@ class Settings:
     analyse_job_ttl_minutes: int = int(os.getenv("ANALYSE_JOB_TTL_MINUTES", "180"))
     pvc_api_key: str = os.getenv("PVC_API_KEY", "").strip()
     tesseract_cmd: str = os.getenv("TESSERACT_CMD", "").strip()
+    ia_clients_enabled: bool = _flag("IA_CLIENTS_ENABLED", True)
+    ia_clients_base_url: str = os.getenv(
+        "IA_CLIENTS_BASE_URL",
+        "https://ia.app-dev.wafabail.ma",
+    ).rstrip("/")
+    ia_clients_api_key: str = os.getenv("IA_CLIENTS_API_KEY", "").strip()
+    ia_clients_timeout_seconds: float = float(os.getenv("IA_CLIENTS_TIMEOUT_SECONDS", "15"))
     sector_data_enabled: bool = _flag("SECTOR_DATA_ENABLED", True)
     sector_data_auto_sync: bool = _flag(
         "SECTOR_AUTO_REFRESH",

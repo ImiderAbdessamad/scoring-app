@@ -116,6 +116,8 @@ class StoredDossierRecord(BaseModel):
     sectorRaw: str | None = None
     sectorNormalized: str | None = None
     benchmarkSectorCode: str | None = None
+    # Source de données sectorielles épinglée (hcp | apsf | internal). None = défaut global.
+    sectorSourceId: str | None = None
     nature: str
     valeurBien: float
     apport: float

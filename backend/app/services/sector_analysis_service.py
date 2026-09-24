@@ -23,6 +23,13 @@ from app.sector.domain import (
     SectorSeriesPoint,
 )
 from app.sector.mapping import resolve_mapping_for_record
+from app.sector.sources_catalog import (
+    DEFAULT_SOURCE_ID,
+    dataset_id_for_role,
+    get_source,
+    resolve_source_id,
+)
+from app.services import sector_source_config
 from app.services.sector_sync_service import freshness_for, schedule_background_refresh
 
 logger = logging.getLogger(__name__)
@@ -250,6 +257,13 @@ def _latest_point(points: list[SectorSeriesPoint]):
     return max(points, key=lambda p: (p.year, p.quarter or 0))
 
 
+def _resolve_record_source(record):
+    pinned = getattr(record, "sectorSourceId", None)
+    if pinned:
+        return resolve_source_id(pinned, DEFAULT_SOURCE_ID)
+    return resolve_source_id(sector_source_config.get_default_source_id(), DEFAULT_SOURCE_ID)
+
+
 class SectorAnalysisService:
     def analyze(
         self,
@@ -263,22 +277,104 @@ class SectorAnalysisService:
         identity = None
         if result is not None:
             identity = result.document.identity
-        mapping = resolve_mapping_for_record(record, identity)
+
+        source_id = _resolve_record_source(record)
+        source_def = get_source(source_id) or get_source(DEFAULT_SOURCE_ID)
+        source_label = source_def.short_label if source_def else "HCP"
+        source_code = source_def.code if source_def else "HCP"
+
         scoring = SectorScoringInfo(includedInFinalScore=False)
         if settings.sector_analysis_affects_scoring:
             scoring.note = (
                 "SECTOR_ANALYSIS_AFFECTS_SCORING=true mais aucune politique Wafabail n’est configurée — "
                 "le score officiel reste null."
             )
-        current_ds = sector_data_repository.get_dataset_by_external("data_12_29")
-        volume_ds = sector_data_repository.get_dataset_by_external("data_12_28")
-        q_current_ds = sector_data_repository.get_dataset_by_external("data_12_41")
-        q_ds = sector_data_repository.get_dataset_by_external("data_12_40")
+
+        # Source non prête pour l'analyse VA → pas de mélange avec HCP.
+        if source_def is None or not source_def.supports_va_analysis:
+            sector_info = SectorInfo(
+                rawActivity=getattr(record, "sectorRaw", None) or getattr(record, "sector", None),
+                sourceId=source_id,
+                sourceLabel=source_label,
+                sourceCode=source_code,
+            )
+            out = SectorAnalysisResult(
+                status="UNAVAILABLE",
+                sector=sector_info,
+                dataFreshness=SectorDataFreshness(status="UNAVAILABLE", source=source_code),
+                warnings=[
+                    (
+                        f"La source « {source_label} » n’est pas encore disponible pour "
+                        "l’analyse sectorielle VA. Choisissez HCP ou une autre source compatible."
+                    )
+                ],
+                scoring=scoring,
+                realGrowthNote=REAL_GROWTH_NOTE,
+            )
+            return self._maybe_persist(record, persist_run_id, out)
+
+        # Mapping branches : uniquement pour la taxonomie de la source active.
+        if source_def.branch_catalog == "hcp":
+            mapping = resolve_mapping_for_record(record, identity)
+        else:
+            from app.sector.domain import SectorMappingResult
+
+            mapping = SectorMappingResult(
+                raw_activity=getattr(record, "sectorRaw", None) or getattr(record, "sector", None),
+                status="UNMATCHED",
+                confidence=0.0,
+            )
+
+        role_current = dataset_id_for_role(source_id, "annual_va_current")
+        role_volume = dataset_id_for_role(source_id, "annual_va_volume")
+        role_q_current = dataset_id_for_role(source_id, "quarterly_va_current")
+        role_q_volume = dataset_id_for_role(source_id, "quarterly_va_volume")
+
+        # Datasets liés à la source (évite collision d'IDs externes entre providers).
+        hcp_source_row = None
+        try:
+            hcp_source_row = sector_data_repository.ensure_hcp_source()
+        except Exception:
+            hcp_source_row = None
+        sqlite_source_pk = hcp_source_row.id if hcp_source_row and source_id == "hcp" else None
+
+        current_ds = (
+            sector_data_repository.get_dataset_by_external(role_current, source_id=sqlite_source_pk)
+            if role_current
+            else None
+        )
+        if current_ds is None and role_current:
+            current_ds = sector_data_repository.get_dataset_by_external(role_current)
+        volume_ds = (
+            sector_data_repository.get_dataset_by_external(role_volume, source_id=sqlite_source_pk)
+            if role_volume
+            else None
+        )
+        if volume_ds is None and role_volume:
+            volume_ds = sector_data_repository.get_dataset_by_external(role_volume)
+        q_current_ds = (
+            sector_data_repository.get_dataset_by_external(role_q_current, source_id=sqlite_source_pk)
+            if role_q_current
+            else None
+        )
+        if q_current_ds is None and role_q_current:
+            q_current_ds = sector_data_repository.get_dataset_by_external(role_q_current)
+        q_ds = (
+            sector_data_repository.get_dataset_by_external(role_q_volume, source_id=sqlite_source_pk)
+            if role_q_volume
+            else None
+        )
+        if q_ds is None and role_q_volume:
+            q_ds = sector_data_repository.get_dataset_by_external(role_q_volume)
+
         freshness_status = freshness_for(current_ds)
         if trigger_refresh and freshness_status in {"STALE", "VERY_STALE", "UNAVAILABLE"}:
-            schedule_background_refresh()
+            if source_id == "hcp":
+                schedule_background_refresh()
         if freshness_status in {"STALE", "VERY_STALE"}:
-            warnings.append("Données HCP en cache — dernière synchronisation antérieure au seuil de fraîcheur.")
+            warnings.append(
+                f"Données {source_label} en cache — dernière synchronisation antérieure au seuil de fraîcheur."
+            )
         versions = []
         for ds in (current_ds, volume_ds, q_current_ds, q_ds):
             if ds:
@@ -295,7 +391,7 @@ class SectorAnalysisService:
             if current_ds and current_ds.last_successful_sync_at
             else None,
             lastCheckedAt=current_ds.last_checked_at.isoformat() if current_ds and current_ds.last_checked_at else None,
-            source="HCP",
+            source=source_code,
             datasetVersions=versions,
             cached=freshness_status in {"STALE", "VERY_STALE", "FRESH"},
         )
@@ -307,6 +403,9 @@ class SectorAnalysisService:
             mappingStatus=mapping.status,
             mappingType=mapping.mapping_method,
             validated=mapping.validated,
+            sourceId=source_id,
+            sourceLabel=source_label,
+            sourceCode=source_code,
         )
         if mapping.status == "REVIEW_REQUIRED":
             out = SectorAnalysisResult(
@@ -324,7 +423,8 @@ class SectorAnalysisService:
                 sector=sector_info,
                 dataFreshness=freshness,
                 warnings=[
-                    "Le secteur de l’entreprise n’a pas pu être rapproché d’une branche HCP de manière fiable."
+                    f"Le secteur de l’entreprise n’a pas pu être rapproché d’une branche {source_label} "
+                    "de manière fiable."
                 ]
                 + warnings,
                 scoring=scoring,
@@ -335,8 +435,11 @@ class SectorAnalysisService:
             out = SectorAnalysisResult(
                 status="NO_DATA",
                 sector=sector_info,
-                dataFreshness=SectorDataFreshness(status="UNAVAILABLE", source="HCP"),
-                warnings=["Les données sectorielles publiques ne sont pas disponibles actuellement."] + warnings,
+                dataFreshness=SectorDataFreshness(status="UNAVAILABLE", source=source_code),
+                warnings=[
+                    f"Les données sectorielles ({source_label}) ne sont pas disponibles actuellement."
+                ]
+                + warnings,
                 scoring=scoring,
                 realGrowthNote=REAL_GROWTH_NOTE,
             )
