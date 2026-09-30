@@ -832,11 +832,10 @@ def _memo(record: StoredDossierRecord, result: ScoringAnalysisResult, scoring: d
 def _copilot(record: StoredDossierRecord, scoring: dict[str, Any], result: ScoringAnalysisResult) -> dict[str, Any]:
     return {
         "welcomeMessage": (
-            f"Bonjour, je suis le copilote Qwen pour {record.name} "
-            f"(score {scoring['score']}/100). Posez une question sur les ratios, les risques ou la synthèse."
+            f"Bonjour, je suis le copilote Qwen pour {record.name}. "
+            "Posez une question sur les ratios, les risques ou la synthèse."
         ),
         "chips": [
-            {"label": "Pourquoi ce score ?", "intent": "pourquoi"},
             {"label": "Risques", "intent": "risque"},
             {"label": "Complétude", "intent": "complet"},
             {"label": "Secteur", "intent": "secteur"},
@@ -959,9 +958,8 @@ def empty_workspace(record: StoredDossierRecord) -> dict[str, Any]:
             "signedAt": "",
         },
         "copilot": {
-            "welcomeMessage": "Je suis le copilote Qwen. Posez une question sur ce dossier : dès que l'analyse est prête, je m'appuie sur le score et les ratios.",
+            "welcomeMessage": "Je suis le copilote Qwen. Posez une question sur ce dossier : dès que l'analyse est prête, je m'appuie sur les ratios et la synthèse.",
             "chips": [
-                {"label": "Pourquoi ce score ?", "intent": "pourquoi"},
                 {"label": "Risques", "intent": "risque"},
                 {"label": "Complétude", "intent": "complet"},
                 {"label": "Secteur", "intent": "secteur"},

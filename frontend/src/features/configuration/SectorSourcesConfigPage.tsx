@@ -14,7 +14,7 @@ export function SectorSourcesConfigPage() {
   const [config, setConfig] = useState<SectorSourcesConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncBusyId, setSyncBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -95,22 +95,22 @@ export function SectorSourcesConfigPage() {
     }
   }
 
-  async function syncHcp() {
-    setSyncBusy(true)
+  async function syncSource(source: SectorSourceItem) {
+    setSyncBusyId(source.id)
     setNotice(null)
     setError(null)
     try {
-      const result = await refreshSectorData(true)
+      const result = await refreshSectorData(true, source.id)
       setNotice(
         result.changed > 0
-          ? `Sync HCP terminée — ${result.updatedObservations} observations mises à jour.`
-          : 'Sync HCP terminée — données déjà à jour.',
+          ? `Sync ${source.shortLabel} terminée — ${result.updatedObservations} observations mises à jour.`
+          : `Sync ${source.shortLabel} terminée — données déjà à jour.`,
       )
       await reload()
     } catch {
-      setError('Synchronisation HCP impossible.')
+      setError(`Synchronisation ${source.shortLabel} impossible.`)
     } finally {
-      setSyncBusy(false)
+      setSyncBusyId(null)
     }
   }
 
@@ -144,8 +144,8 @@ export function SectorSourcesConfigPage() {
                 isolées, ex. codes HCP_*).
               </li>
               <li>
-                Les caches d’observations coexistent par source : HCP n’est pas écrasé par une future
-                source APSF / interne.
+                Les caches d’observations coexistent par source : HCP et Banque mondiale (codes WB_*)
+                ne s’écrasent jamais.
               </li>
               <li>
                 Une source non implémentée peut être listée, mais pas sélectionnée pour l’analyse VA.
@@ -244,15 +244,15 @@ export function SectorSourcesConfigPage() {
                     >
                       {source.isDefault ? 'Source par défaut' : 'Définir comme défaut'}
                     </button>
-                    {source.id === 'hcp' ? (
+                    {source.implemented && source.capabilities.includes('OPEN_DATA_SYNC') ? (
                       <button
                         type="button"
-                        disabled={syncBusy}
-                        onClick={() => void syncHcp()}
+                        disabled={syncBusyId !== null}
+                        onClick={() => void syncSource(source)}
                         className="inline-flex items-center justify-center gap-1.5 rounded-[8px] bg-wb-accent px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-60"
                       >
-                        <RefreshCw size={13} className={syncBusy ? 'animate-spin' : ''} />
-                        {syncBusy ? 'Synchronisation…' : 'Synchroniser HCP'}
+                        <RefreshCw size={13} className={syncBusyId === source.id ? 'animate-spin' : ''} />
+                        {syncBusyId === source.id ? 'Synchronisation…' : `Synchroniser ${source.shortLabel}`}
                       </button>
                     ) : null}
                   </div>

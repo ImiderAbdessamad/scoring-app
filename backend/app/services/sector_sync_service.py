@@ -163,6 +163,132 @@ class SectorSyncService:
             results.append(await self.sync_dataset(definition.dataset_id, force=force))
         return results
 
+    async def sync_worldbank(self, force: bool = False) -> list[dict]:
+        from app.sector.providers.worldbank import WB_DATASETS, WorldBankProvider
+
+        provider = WorldBankProvider()
+        source = sector_data_repository.ensure_source(
+            code="WORLDBANK", name="Banque mondiale (WDI)", provider_type="worldbank_api"
+        )
+        results: list[dict] = []
+        for dataset_id, spec in WB_DATASETS.items():
+            dataset = sector_data_repository.get_or_create_dataset(
+                source_id=source.id,
+                external_dataset_id=dataset_id,
+                name=spec["name"],
+                metric="VALUE_ADDED",
+                frequency="ANNUAL",
+                price_type=spec["price_type"],
+                base_year=None,
+                unit="M MAD",
+            )
+            run = sector_data_repository.add_sync_run(
+                dataset_id=dataset.id,
+                external_dataset_id=dataset_id,
+                status="STARTED",
+                previous_hash=dataset.resource_sha256,
+            )
+            logger.info("sector_sync_start source=worldbank dataset_id=%s", dataset_id)
+            try:
+                fetched = await provider.fetch_dataset(dataset_id)
+                if dataset.resource_sha256 == fetched["sha256"] and not force:
+                    sector_data_repository.touch_checked(dataset.id, last_successful_sync_at=datetime.utcnow())
+                    sector_data_repository.finish_sync_run(
+                        run.id,
+                        status="UNCHANGED",
+                        remote_updated_at=fetched["last_updated"],
+                        new_hash=fetched["sha256"],
+                    )
+                    results.append({"status": "UNCHANGED", "dataset_id": dataset_id, "hash": fetched["sha256"]})
+                    continue
+                inserted, updated = sector_data_repository.replace_observations(
+                    dataset_pk=dataset.id,
+                    observations=fetched["observations"],
+                    resource_sha256=fetched["sha256"],
+                    source_version=fetched["last_updated"],
+                )
+                sector_data_repository.touch_checked(
+                    dataset.id,
+                    resource_sha256=fetched["sha256"],
+                    source_updated_at=fetched["last_updated"],
+                    last_downloaded_at=datetime.utcnow(),
+                    last_successful_sync_at=datetime.utcnow(),
+                    unit="M MAD",
+                )
+                sector_data_repository.finish_sync_run(
+                    run.id,
+                    status="UPDATED",
+                    remote_updated_at=fetched["last_updated"],
+                    new_hash=fetched["sha256"],
+                    rows_read=len(fetched["observations"]),
+                    rows_inserted=inserted,
+                    rows_updated=updated,
+                )
+                logger.info(
+                    "sector_sync_updated source=worldbank dataset_id=%s rows=%s",
+                    dataset_id,
+                    len(fetched["observations"]),
+                )
+                results.append(
+                    {
+                        "status": "UPDATED",
+                        "dataset_id": dataset_id,
+                        "hash": fetched["sha256"],
+                        "rows_read": len(fetched["observations"]),
+                        "rows_inserted": inserted,
+                        "rows_updated": updated,
+                    }
+                )
+            except Exception as exc:
+                logger.warning("sector_sync_failed source=worldbank dataset_id=%s error=%s", dataset_id, exc)
+                sector_data_repository.finish_sync_run(run.id, status="FAILED", error=str(exc))
+                results.append({"status": "FAILED", "dataset_id": dataset_id, "error": str(exc)})
+        return results
+
+    async def sync_source(self, source_id: str, force: bool = False) -> list[dict]:
+        if source_id == "worldbank":
+            return await self.sync_worldbank(force=force)
+        if source_id == "hcp":
+            return await self.sync_all(force=force)
+        return []
+
+    def has_data(self, source_id: str) -> bool:
+        from app.sector.sources_catalog import dataset_id_for_role
+
+        dataset_id = dataset_id_for_role(source_id, "annual_va_current")
+        if not dataset_id:
+            return False
+        row = sector_data_repository.get_dataset_by_external(dataset_id)
+        return bool(row and row.resource_sha256 and sector_data_repository.observation_count(row.id) > 0)
+
+    def source_status(self, source_id: str) -> dict:
+        from app.sector.sources_catalog import get_source
+
+        src = get_source(source_id)
+        if src is None or not src.dataset_roles:
+            return {"status": "NOT_IMPLEMENTED", "datasets": []}
+        datasets = []
+        for dataset_id in dict.fromkeys(src.dataset_roles.values()):
+            row = sector_data_repository.get_dataset_by_external(dataset_id)
+            datasets.append(
+                {
+                    "id": dataset_id,
+                    "status": freshness_for(row),
+                    "lastCheckedAt": row.last_checked_at.isoformat() if row and row.last_checked_at else None,
+                    "lastUpdatedAt": row.last_successful_sync_at.isoformat()
+                    if row and row.last_successful_sync_at
+                    else None,
+                    "observations": sector_data_repository.observation_count(row.id) if row else 0,
+                }
+            )
+        has_obs = any(item["observations"] > 0 for item in datasets)
+        return {
+            "status": "AVAILABLE" if has_obs else "NO_DATA",
+            "lastCheckedAt": next((d["lastCheckedAt"] for d in datasets if d["lastCheckedAt"]), None),
+            "lastUpdatedAt": next((d["lastUpdatedAt"] for d in datasets if d["lastUpdatedAt"]), None),
+            "datasets": datasets,
+        }
+
     def status_payload(self) -> dict:
         datasets = []
         for definition in ENABLED_HCP_DATASETS.values():
@@ -215,12 +341,23 @@ async def sector_sync_loop() -> None:
         try:
             async with _refresh_lock:
                 await sector_sync_service.sync_all()
+                if _source_enabled("worldbank"):
+                    await sector_sync_service.sync_worldbank()
         except Exception as exc:
             logger.warning("sector_sync_failed loop error=%s", exc)
         await asyncio.sleep(interval)
 
 
-def schedule_background_refresh() -> None:
+def _source_enabled(source_id: str) -> bool:
+    try:
+        from app.services import sector_source_config
+
+        return sector_source_config.is_source_enabled(source_id)
+    except Exception:
+        return False
+
+
+def schedule_background_refresh(source_id: str = "hcp") -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -228,6 +365,6 @@ def schedule_background_refresh() -> None:
 
     async def _run():
         async with _refresh_lock:
-            await sector_sync_service.sync_all()
+            await sector_sync_service.sync_source(source_id)
 
     loop.create_task(_run())

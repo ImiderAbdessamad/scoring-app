@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Bot, Send, Sparkles, X } from 'lucide-react'
+import { SHOW_SCORE } from '@/config/env'
+import { stripScore } from '@/lib/hideScore'
 import type { CopilotBlock, CopilotQa } from '@/types/analyse'
 
 type Message = { role: 'ai' | 'user'; text: string }
@@ -17,6 +19,9 @@ type Props = {
 
 export function CopilotPanel({ copilot, messages, input, thinking, onChangeInput, onSend, onClose }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const chips = SHOW_SCORE
+    ? copilot.chips
+    : copilot.chips.filter((chip) => chip.intent !== 'pourquoi' && !/score/i.test(chip.label))
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -67,7 +72,7 @@ export function CopilotPanel({ copilot, messages, input, thinking, onChangeInput
                     : 'whitespace-pre-wrap bg-wb-surface text-slate-700',
                 ].join(' ')}
               >
-                {m.text}
+                {m.role === 'ai' && !SHOW_SCORE ? stripScore(m.text) : m.text}
               </div>
             </motion.div>
           ))}
@@ -91,7 +96,7 @@ export function CopilotPanel({ copilot, messages, input, thinking, onChangeInput
 
       <div className="flex-none border-t border-wb-line px-4 py-3">
         <div className="mb-2.5 flex flex-wrap gap-1.5">
-          {copilot.chips.map((chip) => (
+          {chips.map((chip) => (
             <button
               key={chip.label}
               type="button"

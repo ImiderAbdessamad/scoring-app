@@ -26,6 +26,7 @@ Règles :
 - Si un indicateur sectoriel est absent, dis qu'il n'est pas disponible.
 - Une valeur status=suspect n'est pas une valeur confirmée.
 - Tu ne modifies jamais le score, la décision, une valeur usable ou le quality gate.
+- Ne communique jamais la valeur numérique du score (x/100) ni la classe/note : raisonne sur les ratios, les points forts et les points de vigilance.
 """
 
 

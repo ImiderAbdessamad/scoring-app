@@ -22,11 +22,11 @@ from app.sector.domain import (
     SectorScoringInfo,
     SectorSeriesPoint,
 )
-from app.sector.mapping import resolve_mapping_for_record
 from app.sector.sources_catalog import (
     DEFAULT_SOURCE_ID,
     dataset_id_for_role,
     get_source,
+    resolve_mapping_for_source,
     resolve_source_id,
 )
 from app.services import sector_source_config
@@ -240,7 +240,8 @@ def _deterministic_summary(result: SectorAnalysisResult) -> str:
     if gap_row and gap_row.gapPp is not None:
         sign = "+" if gap_row.gapPp >= 0 else ""
         parts.append(f"Écart nominal entreprise-secteur : {sign}{gap_row.gapPp:.1f} points.")
-    return " ".join(parts) if parts else "Analyse sectorielle HCP disponible, sans commentaire de risque."
+    source_label = (result.sector.sourceLabel if result.sector else None) or "HCP"
+    return " ".join(parts) if parts else f"Analyse sectorielle {source_label} disponible, sans commentaire de risque."
 
 
 def _period_label(year: int | None, quarter: int | None = None) -> str | None:
@@ -314,16 +315,7 @@ class SectorAnalysisService:
             return self._maybe_persist(record, persist_run_id, out)
 
         # Mapping branches : uniquement pour la taxonomie de la source active.
-        if source_def.branch_catalog == "hcp":
-            mapping = resolve_mapping_for_record(record, identity)
-        else:
-            from app.sector.domain import SectorMappingResult
-
-            mapping = SectorMappingResult(
-                raw_activity=getattr(record, "sectorRaw", None) or getattr(record, "sector", None),
-                status="UNMATCHED",
-                confidence=0.0,
-            )
+        mapping = resolve_mapping_for_source(source_id, record, identity)
 
         role_current = dataset_id_for_role(source_id, "annual_va_current")
         role_volume = dataset_id_for_role(source_id, "annual_va_volume")
@@ -331,12 +323,13 @@ class SectorAnalysisService:
         role_q_volume = dataset_id_for_role(source_id, "quarterly_va_volume")
 
         # Datasets liés à la source (évite collision d'IDs externes entre providers).
-        hcp_source_row = None
+        sqlite_source_pk = None
         try:
-            hcp_source_row = sector_data_repository.ensure_hcp_source()
+            sqlite_source_pk = sector_data_repository.ensure_source(
+                code=source_code, name=source_def.label, provider_type=source_def.provider_type
+            ).id
         except Exception:
-            hcp_source_row = None
-        sqlite_source_pk = hcp_source_row.id if hcp_source_row and source_id == "hcp" else None
+            sqlite_source_pk = None
 
         current_ds = (
             sector_data_repository.get_dataset_by_external(role_current, source_id=sqlite_source_pk)
@@ -369,8 +362,8 @@ class SectorAnalysisService:
 
         freshness_status = freshness_for(current_ds)
         if trigger_refresh and freshness_status in {"STALE", "VERY_STALE", "UNAVAILABLE"}:
-            if source_id == "hcp":
-                schedule_background_refresh()
+            if "OPEN_DATA_SYNC" in source_def.capabilities:
+                schedule_background_refresh(source_id)
         if freshness_status in {"STALE", "VERY_STALE"}:
             warnings.append(
                 f"Données {source_label} en cache — dernière synchronisation antérieure au seuil de fraîcheur."
@@ -557,7 +550,7 @@ class SectorAnalysisService:
                 gap=last_gap.gapPp if last_gap else None,
                 comparable=last_company is not None and headline.nominalGrowthYoy is not None,
                 reason=None if last_company else "Analyse de la liasse requise",
-                source="HCP comptes nationaux / ESG entreprise",
+                source=f"{source_label} comptes nationaux / ESG entreprise",
             )
         ]
         status = "AVAILABLE" if annual_current else "NO_DATA"
@@ -565,10 +558,12 @@ class SectorAnalysisService:
             status = "PARTIAL"
             warnings.append("Analyse de la liasse requise pour comparer l’entreprise au secteur.")
         if not annual_real:
-            warnings.append("Série annuelle de volume HCP absente — croissance réelle annuelle non calculée.")
+            warnings.append(
+                f"Série annuelle de volume {source_label} absente — croissance réelle annuelle non calculée."
+            )
         if latest_q and latest and latest_q.year > latest.year:
             warnings.append(
-                f"Comptes annuels HCP disponibles jusqu’à {latest.year}. "
+                f"Comptes annuels {source_label} disponibles jusqu’à {latest.year}. "
                 f"Conjoncture trimestrielle jusqu’à {_period_label(latest_q.year, latest_q.quarter)}."
             )
         metrics = _company_metrics(company)

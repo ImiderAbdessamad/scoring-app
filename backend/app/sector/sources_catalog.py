@@ -22,7 +22,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.sector.mapping import HCP_BRANCHES
+from app.sector.domain import SectorMappingResult
+from app.sector.mapping import HCP_BRANCHES, mapping_from_hcp_code, resolve_mapping_for_record
+from app.sector.providers.worldbank import (
+    HCP_TO_WORLDBANK,
+    WB_DATASET_CURRENT,
+    WB_DATASET_VOLUME,
+    WORLDBANK_BRANCHES,
+)
 from app.sector.registry import HCP_DATASETS
 
 
@@ -67,6 +74,26 @@ SECTOR_SOURCES: dict[str, SectorSourceDefinition] = {
         implemented=True,
         default_enabled=True,
         notes="Source par défaut. Mapping branches HCP_*.",
+    ),
+    "worldbank": SectorSourceDefinition(
+        id="worldbank",
+        code="WORLDBANK",
+        label="Banque mondiale — comptes nationaux (WDI)",
+        short_label="Banque mondiale",
+        provider_type="worldbank_api",
+        description=(
+            "Valeur ajoutée du Maroc par grand secteur (agriculture, industrie, "
+            "manufacturier, services), prix courants et constants, séries annuelles."
+        ),
+        capabilities=("VALUE_ADDED_ANALYSIS", "OPEN_DATA_SYNC"),
+        dataset_roles={
+            "annual_va_current": WB_DATASET_CURRENT,
+            "annual_va_volume": WB_DATASET_VOLUME,
+        },
+        branch_catalog="worldbank",
+        implemented=True,
+        default_enabled=True,
+        notes="Granularité plus large que HCP (4 grands secteurs). Mapping branches WB_*.",
     ),
     "apsf": SectorSourceDefinition(
         id="apsf",
@@ -137,6 +164,8 @@ def branches_for_source(source_id: str) -> dict[str, str]:
         return {}
     if src.branch_catalog == "hcp":
         return dict(HCP_BRANCHES)
+    if src.branch_catalog == "worldbank":
+        return dict(WORLDBANK_BRANCHES)
     return {}
 
 
@@ -145,3 +174,62 @@ def dataset_id_for_role(source_id: str, role: str) -> str | None:
     if src is None:
         return None
     return src.dataset_roles.get(role)
+
+
+def mapping_from_code(source_id: str, code: str, raw: str | None = None) -> SectorMappingResult | None:
+    """Mapping manuel validé, uniquement si le code appartient à la taxonomie de la source."""
+    sid = resolve_source_id(source_id)
+    branches = branches_for_source(sid)
+    if code not in branches:
+        return None
+    if sid == "hcp":
+        return mapping_from_hcp_code(code, raw)
+    return SectorMappingResult(
+        raw_activity=raw,
+        sector_code=code,
+        sector_label=branches[code],
+        confidence=1.0,
+        status="MATCHED",
+        mapping_method="MANUAL",
+        validated=True,
+    )
+
+
+def resolve_mapping_for_source(source_id: str, record, identity=None) -> SectorMappingResult:
+    """Mapping de l'activité du dossier vers la taxonomie de la source active."""
+    sid = resolve_source_id(source_id)
+    raw = getattr(record, "sectorRaw", None) or getattr(record, "sector", None)
+    src = get_source(sid)
+    if src is None or src.branch_catalog == "none":
+        return SectorMappingResult(raw_activity=raw, status="UNMATCHED", confidence=0.0)
+
+    manual_code = getattr(record, "benchmarkSectorCode", None)
+    if manual_code:
+        manual = mapping_from_code(sid, str(manual_code), raw)
+        if manual is not None:
+            return manual
+
+    if src.branch_catalog == "hcp":
+        return resolve_mapping_for_record(record, identity)
+
+    # Autres taxonomies : on passe par le mapping HCP (activité -> branche fine)
+    # puis on agrège vers le grand secteur de la source.
+    hcp_mapping = resolve_mapping_for_record(record, identity)
+    if src.branch_catalog == "worldbank" and hcp_mapping.sector_code in HCP_TO_WORLDBANK:
+        code = HCP_TO_WORLDBANK[hcp_mapping.sector_code]
+        return SectorMappingResult(
+            raw_activity=hcp_mapping.raw_activity or raw,
+            normalized_activity=hcp_mapping.normalized_activity,
+            sector_code=code,
+            sector_label=WORLDBANK_BRANCHES[code],
+            confidence=min(hcp_mapping.confidence or 0.0, 0.9),
+            status="MATCHED" if hcp_mapping.status == "MATCHED" else "REVIEW_REQUIRED",
+            mapping_method="SUGGESTED",
+            validated=False,
+        )
+    return SectorMappingResult(
+        raw_activity=hcp_mapping.raw_activity or raw,
+        normalized_activity=hcp_mapping.normalized_activity,
+        status="REVIEW_REQUIRED" if hcp_mapping.status == "REVIEW_REQUIRED" else "UNMATCHED",
+        confidence=0.0,
+    )

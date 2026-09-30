@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from app.sector.mapping import mapping_from_hcp_code
 from app.sector.sources_catalog import (
     DEFAULT_SOURCE_ID,
+    SECTOR_SOURCES,
     branches_for_source,
     get_source,
+    mapping_from_code,
     resolve_source_id,
 )
 from app.services import dossier_store
@@ -25,6 +26,7 @@ dossier_router = APIRouter(tags=["dossiers"])
 
 class RefreshBody(BaseModel):
     force: bool = False
+    sourceId: str | None = None
 
 
 class SectorMappingBody(BaseModel):
@@ -52,28 +54,21 @@ class DossierSectorSourceBody(BaseModel):
 
 
 def _sync_status_by_code() -> dict[str, dict]:
-    payload = sector_sync_service.status_payload()
-    datasets = payload.get("datasets") or []
-    has_obs = any(int(item.get("observations") or 0) > 0 for item in datasets)
-    last_checked = next((item.get("lastCheckedAt") for item in datasets if item.get("lastCheckedAt")), None)
-    last_updated = next((item.get("lastUpdatedAt") for item in datasets if item.get("lastUpdatedAt")), None)
-    return {
-        "hcp": {
-            "status": "AVAILABLE" if has_obs else "NO_DATA",
-            "lastCheckedAt": last_checked,
-            "lastUpdatedAt": last_updated,
-            "datasets": datasets,
-        },
-        "HCP": {
-            "status": "AVAILABLE" if has_obs else "NO_DATA",
-            "lastCheckedAt": last_checked,
-            "lastUpdatedAt": last_updated,
-        },
-        "apsf": {"status": "NOT_IMPLEMENTED"},
-        "APSF": {"status": "NOT_IMPLEMENTED"},
-        "internal": {"status": "NOT_IMPLEMENTED"},
-        "INTERNAL": {"status": "NOT_IMPLEMENTED"},
-    }
+    out: dict[str, dict] = {}
+    for sid in SECTOR_SOURCES:
+        status = sector_sync_service.source_status(sid)
+        out[sid] = status
+    return out
+
+
+async def _ensure_source_data(source_id: str, *, force: bool = False) -> list[dict]:
+    """Synchronise la source si elle n'a pas encore de données (ou si forcé)."""
+    src = get_source(source_id)
+    if not settings.sector_data_enabled or src is None or "OPEN_DATA_SYNC" not in src.capabilities:
+        return []
+    if not force and sector_sync_service.has_data(source_id):
+        return []
+    return await sector_sync_service.sync_source(source_id, force=force)
 
 
 def _result_from_record(record):
@@ -188,7 +183,12 @@ async def refresh_sources(body: RefreshBody | None = None) -> dict:
     if not settings.sector_data_enabled:
         raise HTTPException(status_code=503, detail="Données sectorielles désactivées")
     started = datetime.now(timezone.utc)
-    results = await sector_sync_service.sync_all(force=bool(body.force) if body else False)
+    force = bool(body.force) if body else False
+    sid = resolve_source_id((body.sourceId if body else None) or DEFAULT_SOURCE_ID, DEFAULT_SOURCE_ID)
+    src = get_source(sid)
+    if src is None or "OPEN_DATA_SYNC" not in src.capabilities:
+        raise HTTPException(status_code=422, detail="Cette source ne supporte pas la synchronisation open data.")
+    results = await sector_sync_service.sync_source(sid, force=force)
     completed = datetime.now(timezone.utc)
     changed = sum(1 for item in results if item.get("status") == "UPDATED")
     upserted = sum(int(item.get("rows_inserted") or 0) + int(item.get("rows_updated") or 0) for item in results)
@@ -199,9 +199,9 @@ async def refresh_sources(body: RefreshBody | None = None) -> dict:
         "updatedObservations": upserted,
         "startedAt": started.isoformat(),
         "completedAt": completed.isoformat(),
-        "force": bool(body.force) if body else False,
+        "force": force,
         "results": results,
-        "sourceId": "hcp",
+        "sourceId": sid,
     }
 
 
@@ -214,8 +214,7 @@ async def get_sector_analysis(
     if record is None:
         raise HTTPException(status_code=404, detail="Dossier introuvable")
     if refresh == "force":
-        if settings.sector_data_enabled and _dossier_source_id(record) == "hcp":
-            await sector_sync_service.sync_all(force=True)
+        await _ensure_source_data(_dossier_source_id(record), force=True)
         trigger = False
     elif refresh == "auto":
         trigger = True
@@ -233,7 +232,7 @@ async def get_sector_analysis(
 
 
 @dossier_router.put("/dossiers/{dossier_id}/sector-source")
-def put_dossier_sector_source(dossier_id: str, body: DossierSectorSourceBody) -> dict:
+async def put_dossier_sector_source(dossier_id: str, body: DossierSectorSourceBody) -> dict:
     """Épingle une source sur le dossier. Change de taxonomie → mapping effacé."""
     record = dossier_store.get_by_id(dossier_id)
     if record is None:
@@ -267,6 +266,9 @@ def put_dossier_sector_source(dossier_id: str, body: DossierSectorSourceBody) ->
         # Évite d'appliquer un code HCP_* (ou autre) à une taxonomie différente.
         patch["benchmark_sector_code"] = None
 
+    sync_results = await _ensure_source_data(sid)
+    sync_failed = any(item.get("status") == "FAILED" for item in sync_results)
+
     updated = dossier_store.update_analyse(dossier_id, **patch)
     current = updated or record
     analysis = sector_analysis_service.analyze(
@@ -274,7 +276,16 @@ def put_dossier_sector_source(dossier_id: str, body: DossierSectorSourceBody) ->
         result=_result_from_record(current),
         trigger_refresh=False,
     )
-    current = _persist_workspace_analysis(dossier_id, current, analysis)
+    current = _persist_workspace_analysis(dossier_id, current, analysis, sector_label=analysis.sector.label)
+
+    if not mapping_cleared:
+        message = "Source inchangée."
+    elif sync_failed:
+        message = f"Source « {src.short_label} » épinglée, mais la synchronisation des données a échoué."
+    elif analysis.status in {"UNMAPPED", "MAPPING_REVIEW_REQUIRED"}:
+        message = f"Source « {src.short_label} » appliquée. Choisissez la branche correspondante."
+    else:
+        message = f"Source « {src.short_label} » appliquée — analyse sectorielle recalculée."
 
     return {
         "dossierId": dossier_id,
@@ -284,11 +295,8 @@ def put_dossier_sector_source(dossier_id: str, body: DossierSectorSourceBody) ->
         "mappingCleared": mapping_cleared,
         "reason": body.reason,
         "analysis": analysis.model_dump(mode="json"),
-        "message": (
-            "Source mise à jour. Remappez le secteur (branche) pour recalculer l’analyse."
-            if mapping_cleared
-            else "Source inchangée."
-        ),
+        "sync": sync_results,
+        "message": message,
     }
 
 
@@ -312,7 +320,7 @@ def put_sector_mapping(dossier_id: str, body: SectorMappingBody) -> dict:
             detail=f"Code branche inconnu pour la source {src.short_label}.",
         )
 
-    mapped = mapping_from_hcp_code(body.hcpSectorCode, record.sectorRaw or record.sector)
+    mapped = mapping_from_code(sid, body.hcpSectorCode, record.sectorRaw or record.sector)
     if mapped is None:
         raise HTTPException(status_code=422, detail="Code branche inconnu")
 

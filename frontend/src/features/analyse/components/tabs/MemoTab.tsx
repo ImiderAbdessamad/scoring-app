@@ -1,6 +1,25 @@
 import { CheckCircle2, Info, PenLine, TriangleAlert } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import type { MemoBlock } from '@/types/analyse'
+import { SHOW_SCORE } from '@/config/env'
+import { hasText, stripScore } from '@/lib/hideScore'
+import type { MemoBlock, MemoSection } from '@/types/analyse'
+
+function visibleBanner(section: MemoSection): string {
+  if (!section.conclusionBanner) return ''
+  const banner = SHOW_SCORE ? section.conclusionBanner : stripScore(section.conclusionBanner)
+  return hasText(banner) ? banner : ''
+}
+
+function isEmptySection(section: MemoSection): boolean {
+  return (
+    !section.paragraphs?.length &&
+    !section.table &&
+    !section.chips?.length &&
+    !section.risks?.length &&
+    !section.conditions?.length &&
+    !visibleBanner(section)
+  )
+}
 
 type Props = {
   memo: MemoBlock
@@ -28,8 +47,12 @@ export function MemoTab({ memo, memoSigned, onToggleSign, busy }: Props) {
 
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[12px] border border-wb-accent-border bg-wb-accent-soft px-4 py-3">
           <span className="text-[13.5px] font-extrabold text-wb-accent">{memo.recommendation}</span>
-          <span className="h-1 w-1 rounded-full bg-wb-accent/50" />
-          <span className="text-[12.5px] font-semibold text-[#92400E]">{memo.scoreLine}</span>
+          {SHOW_SCORE && (
+            <>
+              <span className="h-1 w-1 rounded-full bg-wb-accent/50" />
+              <span className="text-[12.5px] font-semibold text-[#92400E]">{memo.scoreLine}</span>
+            </>
+          )}
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2.5 sm:grid-cols-3">
@@ -42,7 +65,7 @@ export function MemoTab({ memo, memoSigned, onToggleSign, busy }: Props) {
         </div>
 
         <div className="mt-6 flex flex-col gap-5">
-          {memo.sections.map((section) => (
+          {memo.sections.filter((section) => !isEmptySection(section)).map((section) => (
             <div key={section.title} className="border-t border-[#F1F2F4] pt-5">
               <div className="mb-2.5 text-[13px] font-extrabold text-slate-900">{section.title}</div>
 
@@ -133,9 +156,9 @@ export function MemoTab({ memo, memoSigned, onToggleSign, busy }: Props) {
                 </ul>
               )}
 
-              {section.conclusionBanner && (
+              {visibleBanner(section) && (
                 <div className="mt-2 rounded-[10px] bg-wb-ink px-4 py-3 text-[13px] font-bold text-white">
-                  {section.conclusionBanner}
+                  {visibleBanner(section)}
                 </div>
               )}
             </div>

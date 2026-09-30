@@ -30,6 +30,19 @@ type Props = {
   }) => void
 }
 
+const SOURCE_PROVENANCE: Record<string, { dataset: string; base: string; frequency: string }> = {
+  hcp: {
+    dataset: 'Valeurs ajoutées à prix courants et en volume (comptes nationaux)',
+    base: '2014',
+    frequency: 'annuelle + trimestrielle CVS',
+  },
+  worldbank: {
+    dataset: 'WDI — valeur ajoutée par secteur, prix courants et constants (MAD)',
+    base: 'prix constants en monnaie locale',
+    frequency: 'annuelle',
+  },
+}
+
 export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
   const [busy, setBusy] = useState(false)
   const [mappingBusy, setMappingBusy] = useState(false)
@@ -43,7 +56,6 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
   const analysis = local ?? data
 
   const activeSourceId =
-    selectedSourceId ||
     analysis?.sector?.sourceId ||
     sources.find((s) => s.isDefault)?.id ||
     'hcp'
@@ -121,19 +133,26 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
     return analysis?.sector?.label || ''
   }, [selectedCode, branches, analysis?.sector?.label])
 
-  const sourceLabel =
-    analysis?.sector?.sourceLabel ||
-    sources.find((s) => s.id === activeSourceId)?.shortLabel ||
-    'HCP'
+  const activeSource = sources.find((s) => s.id === activeSourceId)
+  const sourceLabel = analysis?.sector?.sourceLabel || activeSource?.shortLabel || 'HCP'
+  const provenance = SOURCE_PROVENANCE[activeSourceId] ?? {
+    dataset: activeSource?.description || '—',
+    base: '—',
+    frequency: '—',
+  }
 
   async function refresh() {
     if (!dossierId) return
     setBusy(true)
     setNotice(`Vérification des données ${sourceLabel}...`)
     try {
-      const result = await refreshSectorData(true)
-      const next = await fetchSectorAnalysis(dossierId, 'force')
+      const result = await refreshSectorData(true, activeSourceId)
+      const next = await fetchSectorAnalysis(dossierId, 'false')
       setLocal(next)
+      onSectorUpdated?.({
+        sectorLabel: next.sector?.label || analysis?.sector?.label || '—',
+        sectorAnalysis: next,
+      })
       if (result.changed > 0) setNotice(`Nouvelles données ${sourceLabel} importées.`)
       else setNotice('Données déjà à jour.')
     } catch {
@@ -241,7 +260,7 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
               onClick={refresh}
               className="mt-3 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold"
             >
-              {busy ? 'Vérification des données HCP...' : 'Actualiser'}
+              {busy ? `Vérification des données ${sourceLabel}...` : 'Actualiser'}
             </button>
           ) : null}
         </Card>
@@ -256,7 +275,7 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
         <Card className="p-5">
           <div className="text-[13px] font-bold text-slate-900">Analyse sectorielle</div>
           <p className="m-0 mt-2 text-[13px] text-wb-muted">
-            Le secteur de l’entreprise n’a pas pu être rapproché d’une branche HCP de manière fiable.
+            Le secteur de l’entreprise n’a pas pu être rapproché d’une branche {sourceLabel} de manière fiable.
           </p>
           <p className="m-0 mt-1 text-[12px] text-wb-faint">
             Sélectionnez une branche ci-dessous pour lancer l’analyse sectorielle.
@@ -417,7 +436,8 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
         <Card className="p-5">
           <div className="text-[13px] font-bold text-slate-900">Conjoncture sectorielle — trimestres récents</div>
           <div className="mb-2 text-[11.5px] text-wb-faint">
-            HCP — CVS Base 2014 · jusqu’à {lastQuarter ? formatSectorPeriod(lastQuarter.year, lastQuarter.quarter) : '—'}
+            {sourceLabel}
+            {activeSourceId === 'hcp' ? ' — CVS Base 2014' : ''} · jusqu’à {lastQuarter ? formatSectorPeriod(lastQuarter.year, lastQuarter.quarter) : '—'}
           </div>
           <SectorQuarterlyTrendChart series={analysis.sectorQuarterly} />
         </Card>
@@ -451,10 +471,10 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
       <Card className="p-5">
         <div className="text-[13px] font-bold text-slate-900">Qualité et provenance des données</div>
         <ul className="mt-2 list-none space-y-1 p-0 text-[12.5px] text-wb-muted">
-          <li>Source : HCP</li>
-          <li>Dataset : Valeurs ajoutées à prix courants</li>
-          <li>Base : 2014</li>
-          <li>Fréquence : annuelle + trimestrielle CVS</li>
+          <li>Source : {activeSource?.label || sourceLabel}</li>
+          <li>Dataset : {provenance.dataset}</li>
+          <li>Base : {provenance.base}</li>
+          <li>Fréquence : {provenance.frequency}</li>
           <li>Dernière période : {latestLabel}</li>
           <li>
             Dernier compte annuel : {h.latestYear ?? '—'}
@@ -473,7 +493,7 @@ export function SectorAnalysisTab({ data, dossierId, onSectorUpdated }: Props) {
           className="mt-3 inline-flex items-center gap-1.5 rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold text-slate-700"
         >
           <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />
-          {busy ? 'Vérification des données HCP...' : 'Actualiser les données'}
+          {busy ? `Vérification des données ${sourceLabel}...` : 'Actualiser les données'}
         </button>
         {notice ? <p className="m-0 mt-2 text-[12px] text-wb-muted">{notice}</p> : null}
       </Card>

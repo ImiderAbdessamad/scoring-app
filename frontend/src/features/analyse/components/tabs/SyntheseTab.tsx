@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
+import { SHOW_SCORE } from '@/config/env'
 import { classTone, scoreTone } from '@/lib/format'
 import type { ScoringAttention, ScoringBlock } from '@/types/analyse'
 
@@ -36,7 +37,8 @@ export function SyntheseTab({ scoring }: Props) {
     <div className="flex flex-col gap-4">
       <AttentionCard attention={scoring.attention ?? EMPTY_ATTENTION} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+      <div className={`grid grid-cols-1 gap-4 ${SHOW_SCORE ? 'lg:grid-cols-[280px_1fr]' : ''}`}>
+        {SHOW_SCORE && (
         <Card delay={0.05} className="flex flex-col items-center p-5 text-center">
           <div className="relative flex h-[148px] w-[148px] items-center justify-center rounded-full" style={ringStyle}>
             <div className="flex h-[118px] w-[118px] flex-col items-center justify-center rounded-full bg-white">
@@ -68,10 +70,18 @@ export function SyntheseTab({ scoring }: Props) {
             <MiniStat value={`${scoring.dossierCompletenessPct}%`} label="Postes extraits" />
           </div>
         </Card>
+        )}
 
         <Card delay={0.1} className="p-5">
           <div className="mb-1 text-[13px] font-bold text-slate-900">Synthèse de l’analyse</div>
           <p className="m-0 mb-4 text-[12.5px] leading-relaxed text-wb-muted">{scoring.summary}</p>
+
+          {!SHOW_SCORE && (
+            <div className="mb-4 grid max-w-[320px] grid-cols-2 gap-2 border-y border-[#F1F2F4] py-3 text-center">
+              <MiniStat value={`${scoring.ratiosOk}/${scoring.ratiosTotal}`} label="Ratios conformes" />
+              <MiniStat value={`${scoring.dossierCompletenessPct}%`} label="Postes extraits" />
+            </div>
+          )}
 
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-faint">
             Facteurs déterminants du score
@@ -257,14 +267,16 @@ function AttentionCard({ attention }: { attention: ScoringAttention }) {
         <div className="border-t border-[#F1F2F4] px-5 pb-4">
           <AttentionSection title="POINTS FORTS" items={attention.pointsForts} />
           <AttentionSection title="POINTS DE VIGILANCE" items={attention.pointsVigilance} />
-          <div className="border-t border-[#F1F2F4] py-3.5">
-            <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-wb-faint">
-              Score final
+          {SHOW_SCORE && (
+            <div className="border-t border-[#F1F2F4] py-3.5">
+              <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-wb-faint">
+                Score final
+              </div>
+              <p className="m-0 text-[12.5px] leading-relaxed text-slate-700">
+                {attention.scoreFinal || '—'}
+              </p>
             </div>
-            <p className="m-0 text-[12.5px] leading-relaxed text-slate-700">
-              {attention.scoreFinal || '—'}
-            </p>
-          </div>
+          )}
         </div>
       )}
     </Card>

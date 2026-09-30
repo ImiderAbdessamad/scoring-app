@@ -23,17 +23,17 @@ def _now() -> datetime:
 
 
 class SectorDataRepository:
-    def ensure_hcp_source(self) -> SectorDataSourceModel:
+    def ensure_source(self, *, code: str, name: str, provider_type: str) -> SectorDataSourceModel:
         with session_scope() as session:
             row = session.scalars(
-                select(SectorDataSourceModel).where(SectorDataSourceModel.code == "HCP")
+                select(SectorDataSourceModel).where(SectorDataSourceModel.code == code)
             ).first()
             if row is None:
                 row = SectorDataSourceModel(
                     id=uuid.uuid4().hex,
-                    code="HCP",
-                    name="Haut Commissariat au Plan",
-                    provider_type="hcp_ckan",
+                    code=code,
+                    name=name,
+                    provider_type=provider_type,
                     active=True,
                 )
                 session.add(row)
@@ -41,6 +41,9 @@ class SectorDataRepository:
                 session.refresh(row)
             session.expunge(row)
             return row
+
+    def ensure_hcp_source(self) -> SectorDataSourceModel:
+        return self.ensure_source(code="HCP", name="Haut Commissariat au Plan", provider_type="hcp_ckan")
 
     def get_or_create_dataset(
         self,

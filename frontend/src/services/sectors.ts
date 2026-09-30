@@ -67,14 +67,14 @@ export function updateSectorSourceFlags(
   return apiPut<SectorSourcesConfig>(`/sectors/sources/${encodeURIComponent(sourceId)}`, flags)
 }
 
-export function refreshSectorData(force = false) {
+export function refreshSectorData(force = false, sourceId?: string) {
   return apiPost<{
     status: string
     checked: number
     changed: number
     updatedObservations: number
     sourceId?: string
-  }>('/sectors/refresh', { force })
+  }>('/sectors/refresh', sourceId ? { force, sourceId } : { force })
 }
 
 export function fetchSectorSourcesStatus() {
