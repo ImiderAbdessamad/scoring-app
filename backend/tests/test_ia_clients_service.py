@@ -78,3 +78,26 @@ def test_ia_base_url_upgrades_http_to_https(monkeypatch):
 def test_ia_http_client_follows_redirects():
     with _ia_http_client(5.0) as client:
         assert client.follow_redirects is True
+
+
+def _captured_verify(monkeypatch) -> object:
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("app.services.ia_clients_service.httpx.Client", FakeClient)
+    _ia_http_client(5.0)
+    return captured["verify"]
+
+
+def test_ia_http_client_verifies_with_wafabail_ca_by_default(monkeypatch):
+    monkeypatch.setattr("app.services.ia_clients_service.settings.ia_clients_verify_ssl", True)
+    monkeypatch.setattr("app.services.ia_clients_service.settings.keycloak_ca_bundle", "/app/certs/ca.pem")
+    assert _captured_verify(monkeypatch) == "/app/certs/ca.pem"
+
+
+def test_ia_http_client_verify_ssl_false_disables_check(monkeypatch):
+    monkeypatch.setattr("app.services.ia_clients_service.settings.ia_clients_verify_ssl", False)
+    assert _captured_verify(monkeypatch) is False

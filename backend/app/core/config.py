@@ -99,6 +99,9 @@ class Settings:
     ).rstrip("/")
     ia_clients_api_key: str = os.getenv("IA_CLIENTS_API_KEY", "").strip()
     ia_clients_timeout_seconds: float = float(os.getenv("IA_CLIENTS_TIMEOUT_SECONDS", "15"))
+    # IA_CLIENTS_VERIFY_SSL=false : pas de vérification TLS de l'API IA — dev uniquement,
+    # tant que l'Ingress ia.app-dev sert le certificat par défaut de Kubernetes.
+    ia_clients_verify_ssl: bool = _flag("IA_CLIENTS_VERIFY_SSL", True)
     sector_data_enabled: bool = _flag("SECTOR_DATA_ENABLED", True)
     sector_data_auto_sync: bool = _flag(
         "SECTOR_AUTO_REFRESH",

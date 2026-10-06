@@ -345,7 +345,10 @@ def _ia_http_client(timeout: float) -> httpx.Client:
     """Client HTTP qui suit les 308 (slash de fin, HTTP→HTTPS)."""
     verify: str | bool = True
     ca = (settings.keycloak_ca_bundle or "").strip()
-    if ca:
+    if not settings.ia_clients_verify_ssl:
+        logger.warning("API clients IA : vérification TLS désactivée (IA_CLIENTS_VERIFY_SSL=false).")
+        verify = False
+    elif ca:
         verify = ca
     return httpx.Client(
         timeout=timeout,
