@@ -106,8 +106,9 @@ def search_ia_clients(
             message="Recherche client IA désactivée (IA_CLIENTS_ENABLED=false).",
         )
 
-    base = (settings.ia_clients_base_url or "").rstrip("/")
-    if not base:
+    try:
+        base = _ia_base_url()
+    except RuntimeError:
         return ClientLookup(
             status="SKIPPED",
             query=query,
@@ -121,7 +122,7 @@ def search_ia_clients(
         headers["Authorization"] = f"Bearer {settings.ia_clients_api_key}"
 
     try:
-        with httpx.Client(timeout=settings.ia_clients_timeout_seconds) as client:
+        with _ia_http_client(settings.ia_clients_timeout_seconds) as client:
             response = client.get(url, params=query, headers=headers)
             response.raise_for_status()
             payload = response.json()
@@ -334,7 +335,23 @@ def _ia_base_url() -> str:
     base = (settings.ia_clients_base_url or "").rstrip("/")
     if not base:
         raise RuntimeError("IA_CLIENTS_BASE_URL non configurée.")
+    # Ingress Wafabail répond 308 si on appelle en HTTP (redirection permanente HTTPS).
+    if base.startswith("http://") and "wafabail.ma" in base:
+        base = "https://" + base[len("http://") :]
     return base
+
+
+def _ia_http_client(timeout: float) -> httpx.Client:
+    """Client HTTP qui suit les 308 (slash de fin, HTTP→HTTPS)."""
+    verify: str | bool = True
+    ca = (settings.keycloak_ca_bundle or "").strip()
+    if ca:
+        verify = ca
+    return httpx.Client(
+        timeout=timeout,
+        follow_redirects=True,
+        verify=verify,
+    )
 
 
 def post_bilan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -342,7 +359,7 @@ def post_bilan(payload: dict[str, Any]) -> dict[str, Any]:
     if not settings.ia_clients_enabled:
         raise RuntimeError("Envoi bilans désactivé (IA_CLIENTS_ENABLED=false).")
     url = f"{_ia_base_url()}/ia-clients/bilans"
-    with httpx.Client(timeout=settings.ia_clients_timeout_seconds) as client:
+    with _ia_http_client(settings.ia_clients_timeout_seconds) as client:
         response = client.post(url, json=payload, headers=_ia_headers())
         body: Any
         try:
@@ -364,7 +381,7 @@ def post_bilans_batch(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     if not payloads:
         raise ValueError("Aucun bilan à envoyer.")
     url = f"{_ia_base_url()}/ia-clients/bilans/batch"
-    with httpx.Client(timeout=max(30.0, settings.ia_clients_timeout_seconds * 2)) as client:
+    with _ia_http_client(max(30.0, settings.ia_clients_timeout_seconds * 2)) as client:
         response = client.post(url, json=payloads, headers=_ia_headers())
         try:
             body = response.json()

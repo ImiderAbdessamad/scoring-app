@@ -1,4 +1,9 @@
-from app.services.ia_clients_service import build_search_query, search_ia_clients
+from app.services.ia_clients_service import (
+    _ia_base_url,
+    _ia_http_client,
+    build_search_query,
+    search_ia_clients,
+)
 
 
 def test_build_search_query_uses_available_fields_only():
@@ -60,3 +65,16 @@ def test_search_ia_clients_matched(monkeypatch):
 def test_search_ia_clients_skipped_without_identifiers():
     result = search_ia_clients()
     assert result.status == "SKIPPED"
+
+
+def test_ia_base_url_upgrades_http_to_https(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ia_clients_service.settings.ia_clients_base_url",
+        "http://ia.app-dev.wafabail.ma/",
+    )
+    assert _ia_base_url() == "https://ia.app-dev.wafabail.ma"
+
+
+def test_ia_http_client_follows_redirects():
+    with _ia_http_client(5.0) as client:
+        assert client.follow_redirects is True

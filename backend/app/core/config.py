@@ -95,7 +95,7 @@ class Settings:
     ia_clients_enabled: bool = _flag("IA_CLIENTS_ENABLED", True)
     ia_clients_base_url: str = os.getenv(
         "IA_CLIENTS_BASE_URL",
-        "http://ia.app-dev.wafabail.ma",
+        "https://ia.app-dev.wafabail.ma",
     ).rstrip("/")
     ia_clients_api_key: str = os.getenv("IA_CLIENTS_API_KEY", "").strip()
     ia_clients_timeout_seconds: float = float(os.getenv("IA_CLIENTS_TIMEOUT_SECONDS", "15"))
