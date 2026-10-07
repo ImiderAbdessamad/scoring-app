@@ -1,8 +1,12 @@
-"""Authentification Keycloak : vérification locale des access tokens JWT du realm RCC.
+"""Authentification Keycloak : vérification locale des access tokens JWT.
 
 Le backend n'appelle pas Keycloak à chaque requête : il télécharge les clés
 publiques du realm (JWKS), les garde en cache, et vérifie signature, issuer,
 audience et expiration localement.
+
+Un realm partagé, deux applications : chacune n'accepte que les tokens émis
+pour son client (audience) et portant son rôle — RCC (rcc-wb, RCC_USER) et
+Scoring (scoring-wb, SCORING_USER).
 """
 from __future__ import annotations
 
@@ -29,7 +33,7 @@ DEV_USER = {
     "username": "dev",
     "display_name": "Développeur local",
     "email": None,
-    "roles": [settings.keycloak_required_role],
+    "roles": [settings.keycloak_required_role, settings.keycloak_scoring_role],
     "initials": "DL",
 }
 
@@ -92,7 +96,7 @@ def _extract_token(request: Request) -> str:
     raise _unauthorized("Authentification requise.")
 
 
-def _decode(token: str) -> dict:
+def _decode(token: str, audience: str) -> dict:
     try:
         kid = jwt.get_unverified_header(token).get("kid")
     except jwt.PyJWTError:
@@ -109,7 +113,7 @@ def _decode(token: str) -> dict:
             token,
             key.key,
             algorithms=_ALGORITHMS,
-            audience=settings.keycloak_client_id,
+            audience=audience,
             issuer=issuer(),
             leeway=_LEEWAY_SECONDS,
             # `iat` n'est pas vérifié : l'horloge de Keycloak peut avancer sur la nôtre
@@ -128,9 +132,9 @@ def _decode(token: str) -> dict:
     return claims
 
 
-def _roles(claims: dict) -> set[str]:
+def _roles(claims: dict, client_id: str) -> set[str]:
     roles = set(claims.get("realm_access", {}).get("roles", []))
-    client = claims.get("resource_access", {}).get(settings.keycloak_client_id, {})
+    client = claims.get("resource_access", {}).get(client_id, {})
     roles.update(client.get("roles", []))
     return roles
 
@@ -142,15 +146,14 @@ def _initials(claims: dict, display_name: str) -> str:
     return "".join(part[0] for part in parts[:2] if part).upper()
 
 
-def get_current_user(request: Request) -> dict:
-    """Dépendance FastAPI : utilisateur authentifié portant le rôle RCC requis."""
+def _authenticate(request: Request, *, client_id: str, role: str, app_name: str) -> dict:
+    """Utilisateur du token, émis pour `client_id` et portant `role`."""
     if not settings.auth_enabled:
         return DEV_USER
-    claims = _decode(_extract_token(request))
-    roles = _roles(claims)
-    required = settings.keycloak_required_role
-    if required and required not in roles:
-        raise HTTPException(status_code=403, detail="Accès RCC non autorisé pour ce compte.")
+    claims = _decode(_extract_token(request), audience=client_id)
+    roles = _roles(claims, client_id)
+    if role and role not in roles:
+        raise HTTPException(status_code=403, detail=f"Accès {app_name} non autorisé pour ce compte.")
     display_name = claims.get("name") or claims.get("preferred_username") or claims["sub"]
     return {
         "id": claims["sub"],
@@ -160,3 +163,23 @@ def get_current_user(request: Request) -> dict:
         "roles": sorted(roles),
         "initials": _initials(claims, display_name),
     }
+
+
+def get_current_user(request: Request) -> dict:
+    """Dépendance FastAPI de l'application RCC (/auth, /rcc)."""
+    return _authenticate(
+        request,
+        client_id=settings.keycloak_client_id,
+        role=settings.keycloak_required_role,
+        app_name="RCC",
+    )
+
+
+def get_scoring_user(request: Request) -> dict:
+    """Dépendance FastAPI de l'application Scoring (dashboard, dossiers, analyse, secteurs)."""
+    return _authenticate(
+        request,
+        client_id=settings.keycloak_scoring_client_id,
+        role=settings.keycloak_scoring_role,
+        app_name="Scoring",
+    )

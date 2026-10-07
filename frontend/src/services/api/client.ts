@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '@/config/env'
+import { accessToken, login } from '@/lib/auth'
 
 export class ApiError extends Error {
   status: number
@@ -19,6 +20,8 @@ export class ApiError extends Error {
 export function apiHeaders(extra?: HeadersInit): Headers {
   const headers = new Headers(extra)
   if (!headers.has('Accept')) headers.set('Accept', 'application/json')
+  const token = accessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
   return headers
 }
 
@@ -49,6 +52,8 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function toApiError(res: Response, path: string): Promise<ApiError> {
+  // Session Keycloak expirée ou jeton refusé : retour à la page de connexion.
+  if (res.status === 401) void login()
   let payload: unknown
   try {
     payload = await res.json()

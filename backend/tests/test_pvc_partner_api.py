@@ -92,8 +92,15 @@ def _client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setattr(settings, "storage_backend", "local")
     dossier_store._records = None
     monkeypatch.setattr("app.api.v1.partners.start_analyse_job", _fake_start)
+    from app.core.security import get_scoring_user
     from app.main import app
 
+    # Les routes /dossiers du scoring exigent un utilisateur Keycloak ; /partners garde sa clé API.
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_scoring_user,
+        lambda: {"id": "test", "username": "test", "display_name": "Test", "roles": ["SCORING_USER"]},
+    )
     return TestClient(app)
 
 

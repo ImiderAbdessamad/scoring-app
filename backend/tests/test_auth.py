@@ -133,6 +133,51 @@ def test_health_routes_stay_public():
     assert client.get("/api/v1/rcc/health").status_code == 200
 
 
+def _scoring_token(**overrides) -> str:
+    claims = {
+        "aud": [settings.keycloak_scoring_client_id, "account"],
+        "azp": settings.keycloak_scoring_client_id,
+        "realm_access": {"roles": [settings.keycloak_scoring_role]},
+    }
+    claims.update(overrides)
+    return _token(**claims)
+
+
+def _get(path: str, token: str | None = None):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return client.get(path, headers=headers)
+
+
+def test_scoring_routes_require_token():
+    for path in ("/api/v1/dashboard", "/api/v1/dossiers", "/api/v1/sectors/branches"):
+        assert _get(path).status_code == 401, path
+
+
+def test_scoring_token_reaches_scoring_routes():
+    assert _get("/api/v1/dossiers", _scoring_token()).status_code not in (401, 403)
+
+
+def test_scoring_token_without_role_is_403():
+    token = _scoring_token(realm_access={"roles": [settings.keycloak_required_role]})
+    response = _get("/api/v1/dossiers", token)
+    assert response.status_code == 403
+    assert "Scoring" in response.json()["detail"]
+
+
+def test_tokens_are_bound_to_their_application():
+    # Un token du front RCC n'ouvre pas le scoring, et inversement (audience).
+    assert _get("/api/v1/dossiers", _token()).status_code == 401
+    assert _get("/api/v1/rcc/audit", _scoring_token()).status_code == 401
+
+
+def test_partner_routes_stay_outside_keycloak(monkeypatch):
+    # pv-manager : clé API, pas de token Keycloak — le refus vient de la clé, pas de Keycloak.
+    monkeypatch.setattr(settings, "pvc_api_key", "cle-test")
+    response = _get("/api/v1/partners/pvc/dossiers/DEM-INCONNU", _scoring_token())
+    assert response.status_code == 401
+    assert response.headers.get("www-authenticate") != "Bearer"
+
+
 def test_auth_disabled_returns_dev_user(monkeypatch):
     monkeypatch.setattr(settings, "auth_enabled", False)
     assert _me().json()["username"] == "dev"

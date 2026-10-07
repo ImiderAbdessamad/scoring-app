@@ -126,16 +126,22 @@ class Settings:
         os.getenv("HCP_CKAN_BASE_URL", "https://data.gov.ma/data/api/3/action"),
     ).rstrip("/")
 
-    # Authentification Keycloak (realm dédié RCC). AUTH_ENABLED=false : utilisateur
-    # de développement fixe, sans token — réservé au poste local.
+    # Authentification Keycloak (realm partagé SCORING / RCC). AUTH_ENABLED=false :
+    # utilisateur de développement fixe, sans token — réservé au poste local.
     auth_enabled: bool = _flag("AUTH_ENABLED", True)
     # URL publique : sert à vérifier l'issuer (`iss`) des tokens émis au navigateur.
     keycloak_url: str = os.getenv(
         "KEYCLOAK_URL", "https://keycloak.app-dev.wafabail.ma"
     ).rstrip("/")
-    keycloak_realm: str = os.getenv("KEYCLOAK_REALM", "rcc").strip()
+    keycloak_realm: str = os.getenv("KEYCLOAK_REALM", "scoring-rcc").strip()
+    # Application RCC : client du front RCC et rôle exigé sur /auth et /rcc.
     keycloak_client_id: str = os.getenv("KEYCLOAK_CLIENT_ID", "rcc-wb").strip()
     keycloak_required_role: str = os.getenv("KEYCLOAK_REQUIRED_ROLE", "RCC_USER").strip()
+    # Application Scoring : client du front scoring et rôle exigé sur ses routes.
+    keycloak_scoring_client_id: str = os.getenv(
+        "KEYCLOAK_SCORING_CLIENT_ID", "scoring-wb"
+    ).strip()
+    keycloak_scoring_role: str = os.getenv("KEYCLOAK_SCORING_ROLE", "SCORING_USER").strip()
     # URL de téléchargement des clés publiques. Vide : déduite de KEYCLOAK_URL.
     # Dans le cluster : service interne (http://keycloak.keycloak-dev.svc.cluster.local:8080/...).
     keycloak_jwks_url: str = os.getenv("KEYCLOAK_JWKS_URL", "").strip()

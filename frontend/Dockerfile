@@ -12,8 +12,15 @@ COPY frontend/public ./public
 
 ARG VITE_API_BASE_URL=/api/v1
 ARG VITE_USE_MOCK=false
+# Keycloak (realm SCORING / RCC, client scoring-wb) — fixé au build par Vite.
+ARG VITE_KEYCLOAK_URL=https://keycloak.app-dev.wafabail.ma
+ARG VITE_KEYCLOAK_REALM=scoring-rcc
+ARG VITE_KEYCLOAK_CLIENT_ID=scoring-wb
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
-    VITE_USE_MOCK=$VITE_USE_MOCK
+    VITE_USE_MOCK=$VITE_USE_MOCK \
+    VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL \
+    VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM \
+    VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
 
 RUN npm run build
 

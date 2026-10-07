@@ -7,10 +7,12 @@ import {
   FolderOpen,
   LayoutGrid,
   LineChart,
+  LogOut,
   Settings2,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import icon from '@/assets/icon.png'
+import { currentUser, logout } from '@/lib/auth'
 import { fetchDashboard } from '@/services/api/dashboard'
 import type { AlertItem } from '@/types/dossier'
 
@@ -59,6 +61,7 @@ export function Sidebar({ open, onToggle }: Props) {
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState<AlertItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const user = currentUser()
 
   useEffect(() => {
     let cancelled = false
@@ -273,6 +276,51 @@ export function Sidebar({ open, onToggle }: Props) {
         </div>
 
         <div className="mt-auto" />
+
+        <div
+          className="relative w-full"
+          onMouseEnter={() => setHovered('logout')}
+          onMouseLeave={() => setHovered(null)}
+        >
+          <button
+            type="button"
+            aria-label={`Se déconnecter (${user.name})`}
+            onClick={() => void logout()}
+            className={[
+              'relative flex h-[42px] cursor-pointer items-center rounded-[11px] border-0 bg-transparent text-wb-rail transition-colors hover:bg-wb-ink-soft hover:text-white',
+              open ? 'w-full gap-3 px-3' : 'mx-auto w-[42px] justify-center',
+            ].join(' ')}
+          >
+            <span className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full bg-wb-ink-soft text-[10px] font-bold text-white">
+              {user.initials}
+            </span>
+            <AnimatePresence>
+              {open && (
+                <motion.span
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -6 }}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-2"
+                >
+                  <span className="truncate text-[13px] font-semibold">{user.name}</span>
+                  <LogOut size={16} strokeWidth={1.8} className="flex-none" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+          <AnimatePresence>
+            {!open && hovered === 'logout' && (
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                className="pointer-events-none absolute left-[52px] top-1/2 z-50 -translate-y-1/2 whitespace-nowrap rounded-lg bg-wb-ink-soft px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-lg ring-1 ring-white/10"
+              >
+                {user.name} · Se déconnecter
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </nav>
 
       <AnimatePresence>
