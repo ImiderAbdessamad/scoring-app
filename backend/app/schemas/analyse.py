@@ -168,6 +168,13 @@ class FieldEvidence(BaseModel):
     confidence: Optional[float] = None
     source_excerpt: Optional[str] = None
     period: Optional[str] = None
+    # Position de la valeur dans la liasse, mesurée par le moteur d'extraction :
+    # `pdf_points_unrotated` (PDF natif) ou `ocr_pixels_after_rotation_and_deskew` (scan).
+    bbox: Optional[list[float]] = None
+    coordinate_space: Optional[str] = None
+    # Même position en proportion de la page affichée [x0, y0, x1, y1] (0 → 1),
+    # calculée pour les pages scannées en défaisant redressement et rotation OCR.
+    bbox_relative: Optional[list[float]] = None
 
 
 class PeriodFieldValue(BaseModel):

@@ -1,6 +1,8 @@
 """Projection extracteur V6 → contrat API Scoring (champs RCC + identity + CAF)."""
 from __future__ import annotations
 
+import math
+
 from app.domain.period_math import safe_sum_period_fields
 
 from app.schemas.analyse import (
@@ -230,8 +232,77 @@ def _evidence_for(entry: dict[str, Any] | None, period: str) -> list[FieldEviden
             confidence=_to_float(proof.get("fused_confidence") or proof.get("confidence")),
             source_excerpt=str(proof.get("parser") or entry.get("source_parser") or "v6"),
             period=period,
+            bbox=_bbox(proof.get("bbox")),
+            coordinate_space=proof.get("coordinate_space"),
         )
     ]
+
+
+def _bbox(value: Any) -> list[float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    try:
+        box = [float(v) for v in value]
+    except (TypeError, ValueError):
+        return None
+    return box if box[2] > box[0] and box[3] > box[1] else None
+
+
+SCAN_COORDINATES = "ocr_pixels_after_rotation_and_deskew"
+
+
+def relative_bbox(bbox: list[float] | None, coordinate_space: str | None, page: dict[str, Any] | None) -> list[float] | None:
+    """Position d'une cellule OCR en proportion de la page affichée (0 → 1).
+
+    Le moteur lit les scans dans une image tournée (`rotation_clockwise`, par quarts
+    de tour) puis redressée (`deskew_counterclockwise`, rotation OpenCV autour du
+    centre, même taille). On défait ces deux étapes sur les 4 coins du rectangle,
+    puis on divise par la taille de la page rendue.
+    """
+    if not bbox or coordinate_space != SCAN_COORDINATES or not page:
+        return None
+    size = page.get("ocr_image_size")
+    if not isinstance(size, (list, tuple)) or len(size) != 2 or not all(size):
+        return None
+    width, height = float(size[0]), float(size[1])
+    rotation = int(page.get("rotation_clockwise") or 0) % 360
+    angle = math.radians(float(page.get("deskew_counterclockwise") or 0.0))
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    cx, cy = width / 2, height / 2
+    # Taille de la page rendue, avant la rotation par quarts de tour.
+    page_w, page_h = (height, width) if rotation in (90, 270) else (width, height)
+
+    def to_page(x: float, y: float) -> tuple[float, float]:
+        # 1) défaire le redressement : inverse de la matrice cv2.getRotationMatrix2D.
+        dx, dy = x - cx, y - cy
+        x, y = cos_a * dx - sin_a * dy + cx, sin_a * dx + cos_a * dy + cy
+        # 2) défaire la rotation horaire (np.rot90 par quarts de tour).
+        if rotation == 90:
+            x, y = y, page_h - x
+        elif rotation == 180:
+            x, y = page_w - x, page_h - y
+        elif rotation == 270:
+            x, y = page_w - y, x
+        return x / page_w, y / page_h
+
+    x0, y0, x1, y1 = bbox
+    corners = [to_page(x, y) for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1))]
+    xs = [min(1.0, max(0.0, p[0])) for p in corners]
+    ys = [min(1.0, max(0.0, p[1])) for p in corners]
+    box = [round(min(xs), 5), round(min(ys), 5), round(max(xs), 5), round(max(ys), 5)]
+    return box if box[2] > box[0] and box[3] > box[1] else None
+
+
+def locate_evidence(fields: list[ExtractedField], pages: list[dict[str, Any]] | None) -> None:
+    """Complète chaque preuve d'une page scannée avec sa position relative sur la page."""
+    records = {page.get("page"): page for page in pages or [] if isinstance(page, dict)}
+    for field in fields:
+        for period_value in (getattr(field, "current", None), getattr(field, "previous", None)):
+            for evidence in getattr(period_value, "evidence", None) or []:
+                if evidence.bbox_relative is None:
+                    evidence.bbox_relative = relative_bbox(
+                        evidence.bbox, evidence.coordinate_space, records.get(evidence.page_number)
+                    )
 
 
 def _lookup_entry(canonical: dict[str, Any], keys: list[str]) -> tuple[str | None, dict[str, Any] | None]:

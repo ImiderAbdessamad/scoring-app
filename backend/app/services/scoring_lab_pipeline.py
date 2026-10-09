@@ -43,6 +43,7 @@ from app.services.v6_result_mapper import (
     extraction_summary,
     identity_from_v6,
     identity_warnings,
+    locate_evidence,
     map_capital_analysis,
     map_controls,
     map_fields,
@@ -1032,6 +1033,8 @@ def build_result_from_v6(v6: dict[str, Any], filename: str) -> ScoringAnalysisRe
     identity = identity_from_v6(v6.get("identity") or {})
     pages = map_page_audit(v6)
     fields = map_fields(v6.get("canonical") or {})
+    # Position de chaque valeur sur la page (bouton « Voir » du poste de validation RCC).
+    locate_evidence(fields, v6.get("pages"))
     fields.extend(_derived_fields(fields))
     document = document_from_v6(v6, filename, identity)
     year_n = _exercise_year(document.exercise, filename)
