@@ -313,6 +313,45 @@ def resolve_tiers(identite: dict[str, Any] | None) -> str | None:
     return None
 
 
+def lookup_query(identite: dict[str, Any] | None, ice: str | None = None) -> dict[str, str]:
+    """Identifiants de la recherche initiale, sinon ceux de l'identité extraite."""
+    data = identite or {}
+    lookup = data.get("client_lookup")
+    stored = lookup.get("query") if isinstance(lookup, dict) else None
+    if isinstance(stored, dict) and stored:
+        return {key: str(value) for key, value in stored.items() if value}
+    return build_search_query(
+        ice=data.get("ice") or ice,
+        rc=data.get("rc"),
+        identifiant_fiscal=data.get("identifiant_fiscal"),
+    )
+
+
+def apply_client_lookup(identite: dict[str, Any] | None, lookup: ClientLookup) -> dict[str, Any]:
+    """Identité mise à jour après une nouvelle recherche dans le référentiel clients.
+
+    - un client : son n° tiers, définitif (remplace une saisie manuelle) ;
+    - plusieurs : le choix de l'analyste est gardé s'il figure encore parmi eux ;
+    - aucun, API indisponible : le n° tiers déjà choisi ou saisi est conservé.
+    """
+    data = dict(identite or {})
+    previous_tiers = data.get("tiers")
+    previous_source = data.get("tiers_source")
+    data["client_lookup"] = lookup.model_dump(mode="json")
+    data["matched_clients"] = [match.model_dump(mode="json") for match in lookup.matches]
+    # Résultat relancé : à conserver quand un dossier du scoring est réimporté.
+    data["client_lookup_refreshed"] = True
+    if lookup.status == "MATCHED":
+        data["tiers"] = lookup.primary.tiers if lookup.primary else None
+        data.pop("tiers_source", None)
+    elif lookup.status == "MULTIPLE":
+        candidates = {match.tiers for match in lookup.matches if match.tiers}
+        if not (previous_source == "selected" and previous_tiers in candidates):
+            data["tiers"] = None
+            data.pop("tiers_source", None)
+    return data
+
+
 def build_bilan_payload_from_values(
     *,
     tiers: str,

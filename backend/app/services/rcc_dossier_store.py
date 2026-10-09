@@ -315,6 +315,31 @@ class RccDossierStore:
             )
             return dossier
 
+    def set_identite(self, dossier_id: str, identite: dict[str, Any], action: str, actor: str) -> RccDossier | None:
+        """Remplace l'identité (ex. référentiel clients relancé), tracé dans l'audit."""
+        with self._lock:
+            dossier = self._items.get(dossier_id)
+            if dossier is None:
+                return None
+            before = resolve_tiers(dossier.identite)
+            dossier.identite = identite
+            dossier.updated_at = _now()
+            self._audit.append(
+                {
+                    "kind": "event",
+                    "timestamp": dossier.updated_at,
+                    "actor": actor,
+                    "dossier_id": dossier.id,
+                    "client_name": dossier.client_name,
+                    "field_code": None,
+                    "field_label": "Référentiel clients",
+                    "before": before,
+                    "after": resolve_tiers(identite),
+                    "action": action,
+                }
+            )
+            return dossier
+
     def mark_bilans_push(self, dossier_id: str, payload: dict[str, Any]) -> RccDossier | None:
         with self._lock:
             dossier = self._items.get(dossier_id)

@@ -154,6 +154,80 @@ def test_scoring_reimport_keeps_analyst_tiers(make_dossier, monkeypatch):
     assert resolve_tiers(dossier.identite) == "T-55"
 
 
+# --- Relance de la recherche : POST /rcc/dossiers/{id}/client-lookup/refresh ----------------
+
+def _fake_search(monkeypatch, status: str, matches: list[dict] | None = None, calls: list | None = None):
+    from app.schemas.analyse import ClientLookup, IaClientMatch
+
+    items = [IaClientMatch(**item) for item in (matches or [])]
+
+    def search(**query):
+        if calls is not None:
+            calls.append(query)
+        return ClientLookup(status=status, query={"ice": "001531725000054"}, matches=items,
+                            primary=items[0] if items else None, message=f"recherche {status}")
+
+    monkeypatch.setattr("app.services.ia_clients_service.search_ia_clients", search)
+
+
+def _refresh(dossier_id: str):
+    return client.post(f"/api/v1/rcc/dossiers/{dossier_id}/client-lookup/refresh")
+
+
+def test_refresh_after_api_down_finds_the_client(make_dossier, monkeypatch):
+    calls: list = []
+    make_dossier("RCC-REFRESH-OK", {"client_lookup": {**_lookup("ERROR"), "query": {"ice": "001531725000054", "identifiantFiscal": "1103297"}}})
+    _fake_search(monkeypatch, "MATCHED", CANDIDATES[1:], calls)
+    response = _refresh("RCC-REFRESH-OK")
+    assert response.status_code == 200
+    body = response.json()["dossier"]
+    assert body["tiers"] == "022654"
+    assert body["client_lookup"]["status"] == "MATCHED"
+    # La recherche reprend les identifiants de la recherche initiale.
+    assert calls == [{"ice": "001531725000054", "rc": None, "identifiant_fiscal": "1103297"}]
+    audit = client.get("/api/v1/rcc/dossiers/RCC-REFRESH-OK/audit").json()["items"]
+    assert any(item["action"] == "Référentiel clients relancé (MATCHED)" for item in audit)
+
+
+def test_refresh_still_down_keeps_manual_tiers(make_dossier, monkeypatch):
+    make_dossier("RCC-REFRESH-DOWN", {"tiers": "T-9", "tiers_source": "manual", "client_lookup": _lookup("ERROR")})
+    _fake_search(monkeypatch, "ERROR")
+    assert _refresh("RCC-REFRESH-DOWN").json()["dossier"]["tiers"] == "T-9"
+
+
+def test_refresh_single_match_replaces_manual_tiers(make_dossier, monkeypatch):
+    make_dossier("RCC-REFRESH-REPLACE", {"tiers": "T-9", "tiers_source": "manual", "client_lookup": _lookup("NOT_FOUND")})
+    _fake_search(monkeypatch, "MATCHED", CANDIDATES[1:])
+    body = _refresh("RCC-REFRESH-REPLACE").json()["dossier"]
+    assert body["tiers"] == "022654"
+    assert body["tiers_source"] is None
+
+
+def test_refresh_multiple_keeps_a_still_valid_choice(make_dossier, monkeypatch):
+    make_dossier("RCC-REFRESH-MULTI", {"tiers": "022654", "tiers_source": "selected", "client_lookup": _lookup("MULTIPLE", CANDIDATES)})
+    _fake_search(monkeypatch, "MULTIPLE", CANDIDATES)
+    assert _refresh("RCC-REFRESH-MULTI").json()["dossier"]["tiers"] == "022654"
+    _fake_search(monkeypatch, "MULTIPLE", CANDIDATES[:1])
+    assert _refresh("RCC-REFRESH-MULTI").json()["dossier"]["tiers"] is None
+
+
+def test_scoring_reimport_keeps_refreshed_lookup(make_dossier, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.schemas.analyse import ClientLookup, IaClientMatch
+    from app.services.ia_clients_service import apply_client_lookup
+    from app.services.rcc_from_scoring import _fill_dossier
+
+    monkeypatch.setattr("app.services.rcc_from_scoring._sector_candidates", lambda _record: (None,))
+    match = IaClientMatch(**CANDIDATES[1])
+    dossier = make_dossier("RCC-REFRESH-REIMPORT", {"client_lookup": _lookup("ERROR")})
+    dossier.identite = apply_client_lookup(dossier.identite, ClientLookup(status="MATCHED", matches=[match], primary=match))
+    stale = {"raison_sociale": "STE EUROMEDIA", "client_lookup": _lookup("ERROR")}
+    _fill_dossier(dossier, record=SimpleNamespace(name="STE EUROMEDIA", ice=None), result=SimpleNamespace(completeness_pct=0), projected={}, identite=stale)
+    assert dossier.identite["client_lookup"]["status"] == "MATCHED"
+    assert resolve_tiers(dossier.identite) == "022654"
+
+
 def test_missing_tiers_message_points_to_referential(make_dossier):
     dossier = make_dossier("RCC-TIERS-MISSING", {"client_lookup": _lookup("NOT_FOUND")})
     with pytest.raises(ValueError, match="saisissez-le dans le Référentiel clients"):

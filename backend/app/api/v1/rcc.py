@@ -400,6 +400,32 @@ def set_dossier_tiers(
     return dossier_payload(updated)
 
 
+@router.post("/rcc/dossiers/{dossier_id}/client-lookup/refresh")
+def refresh_client_lookup(dossier_id: str, user: dict = Depends(get_current_user)) -> dict:
+    """Relance la recherche du client dans le référentiel (API IA indisponible à l'import…)."""
+    from app.services.ia_clients_service import (
+        apply_client_lookup,
+        lookup_query,
+        search_ia_clients,
+    )
+
+    dossier = _dossier_or_404(dossier_id)
+    query = lookup_query(dossier.identite, ice=dossier.ice)
+    lookup = search_ia_clients(
+        ice=query.get("ice"),
+        rc=query.get("rc"),
+        identifiant_fiscal=query.get("identifiantFiscal"),
+    )
+    identite = apply_client_lookup(dossier.identite, lookup)
+    rcc_dossier_store.put(dossier)  # un dossier importé du scoring n'est pas encore en mémoire
+    updated = rcc_dossier_store.set_identite(
+        dossier.id, identite, f"Référentiel clients relancé ({lookup.status})", user["display_name"]
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Dossier introuvable.")
+    return dossier_payload(updated)
+
+
 @router.post("/rcc/dossiers/{dossier_id}/attach")
 def attach_dossier(
     dossier_id: str, payload: DossierCreateRequest, user: dict = Depends(get_current_user)

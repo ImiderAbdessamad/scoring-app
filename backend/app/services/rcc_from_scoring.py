@@ -322,8 +322,12 @@ def _pdf_bytes(record) -> bytes | None:
 
 
 def _fill_dossier(dossier: RccDossier, *, record, result, projected, identite) -> RccDossier:
-    # La réimportation reconstruit l'identité : le n° tiers choisi ou saisi par l'analyste est conservé.
+    # La réimportation reconstruit l'identité : le référentiel clients relancé et le
+    # n° tiers choisi ou saisi par l'analyste sont conservés.
     previous = dossier.identite or {}
+    if previous.get("client_lookup_refreshed"):
+        for key in ("client_lookup", "matched_clients", "tiers", "client_lookup_refreshed"):
+            identite[key] = previous.get(key)
     if previous.get("tiers_source") in TIERS_SOURCES:
         identite["tiers"] = previous.get("tiers")
         identite["tiers_source"] = previous["tiers_source"]
