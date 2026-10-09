@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -233,6 +233,13 @@ class BilansPushOptions(BaseModel):
     dry_run: bool = False
 
 
+class TiersRequest(BaseModel):
+    # Pas de format imposé : toute valeur non vide, 30 caractères au plus.
+    tiers: str = Field(min_length=1, max_length=30)
+    # `selected` : choisi parmi les clients du référentiel ; `manual` : saisi.
+    source: Literal["selected", "manual"]
+
+
 @router.get("/rcc/dossiers")
 def list_dossiers(
     status: Optional[str] = Query(default=None),
@@ -345,6 +352,52 @@ def save_overrides(
     if dossier is None:
         raise HTTPException(status_code=404, detail="Dossier introuvable.")
     return dossier_payload(dossier)
+
+
+@router.put("/rcc/dossiers/{dossier_id}/tiers")
+def set_dossier_tiers(
+    dossier_id: str,
+    payload: TiersRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """N° tiers retenu pour Ekip, selon le résultat du référentiel clients.
+
+    - un seul client trouvé : n° tiers définitif, non modifiable ;
+    - plusieurs clients : l'analyste en choisit un (`selected`) ;
+    - aucun client ou API indisponible : l'analyste le saisit (`manual`).
+    """
+    from app.services.ia_clients_service import lookup_status
+
+    tiers = payload.tiers.strip()
+    if not tiers:
+        raise HTTPException(status_code=422, detail="Le n° tiers est vide.")
+
+    dossier = _dossier_or_404(dossier_id)
+    identite = dossier.identite or {}
+    status = lookup_status(identite)
+    if status == "MATCHED":
+        raise HTTPException(
+            status_code=409,
+            detail="Client trouvé dans le référentiel : son n° tiers est définitif.",
+        )
+    if payload.source == "selected":
+        lookup = identite.get("client_lookup") or {}
+        candidates = {
+            str(item.get("tiers") or "").strip()
+            for item in (lookup.get("matches") or identite.get("matched_clients") or [])
+            if isinstance(item, dict)
+        }
+        if status != "MULTIPLE" or tiers not in candidates:
+            raise HTTPException(
+                status_code=422,
+                detail="Ce n° tiers ne fait pas partie des clients proposés par le référentiel.",
+            )
+
+    rcc_dossier_store.put(dossier)  # un dossier importé du scoring n'est pas encore en mémoire
+    updated = rcc_dossier_store.set_tiers(dossier.id, tiers, payload.source, user["display_name"])
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Dossier introuvable.")
+    return dossier_payload(updated)
 
 
 @router.post("/rcc/dossiers/{dossier_id}/attach")

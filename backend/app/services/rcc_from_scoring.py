@@ -17,6 +17,7 @@ from app.schemas.analyse import (
     SCORING_EXTRA_ELEMENTS,
     ScoringAnalysisResult,
 )
+from app.services.ia_clients_service import TIERS_SOURCES
 from app.services.rcc_dossier_store import RccDossier, rcc_dossier_store
 from app.services.rcc_projection import build_identite, clean_activite, project_rcc_result
 
@@ -321,6 +322,11 @@ def _pdf_bytes(record) -> bytes | None:
 
 
 def _fill_dossier(dossier: RccDossier, *, record, result, projected, identite) -> RccDossier:
+    # La réimportation reconstruit l'identité : le n° tiers choisi ou saisi par l'analyste est conservé.
+    previous = dossier.identite or {}
+    if previous.get("tiers_source") in TIERS_SOURCES:
+        identite["tiers"] = previous.get("tiers")
+        identite["tiers_source"] = previous["tiers_source"]
     dossier.result = projected
     dossier.scoring_result = result
     dossier.identite = identite

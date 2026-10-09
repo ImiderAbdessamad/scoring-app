@@ -63,7 +63,8 @@ def build_identite(result: ScoringAnalysisResult) -> dict[str, Any]:
         "declaration_time": _pick(identity.declaration_time, company.declaration_time),
         "reference": _pick(identity.reference, company.reference),
         "rc": _pick(company.rc, primary.rc if primary else None),
-        "tiers": _pick(primary.tiers if primary else None),
+        # Un seul client : son n° tiers est retenu. Plusieurs : l'analyste choisit.
+        "tiers": _pick(primary.tiers if primary and lookup.status == "MATCHED" else None),
     }
     if lookup is not None:
         payload["client_lookup"] = lookup.model_dump(mode="json")

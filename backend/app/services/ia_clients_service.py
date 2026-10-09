@@ -283,8 +283,26 @@ def _julian_day_from_date(*candidates: Any) -> int | None:
     return None
 
 
+TIERS_SOURCES = {"selected", "manual"}
+
+
+def lookup_status(identite: dict[str, Any] | None) -> str | None:
+    lookup = (identite or {}).get("client_lookup")
+    return lookup.get("status") if isinstance(lookup, dict) else None
+
+
 def resolve_tiers(identite: dict[str, Any] | None) -> str | None:
+    """N° tiers retenu pour Ekip.
+
+    - choisi dans la liste ou saisi par l'analyste (`tiers_source`) : prioritaire ;
+    - plusieurs clients (MULTIPLE) : aucun tant que l'analyste n'a pas choisi ;
+    - un seul client (MATCHED) : son n° tiers, définitif.
+    """
     data = identite or {}
+    if data.get("tiers_source") in TIERS_SOURCES:
+        return _clean(data.get("tiers"))
+    if lookup_status(data) == "MULTIPLE":
+        return None
     tiers = _clean(data.get("tiers"))
     if tiers:
         return tiers
@@ -292,11 +310,6 @@ def resolve_tiers(identite: dict[str, Any] | None) -> str | None:
     primary = lookup.get("primary") if isinstance(lookup, dict) else None
     if isinstance(primary, dict):
         return _clean(primary.get("tiers"))
-    matches = data.get("matched_clients") or lookup.get("matches") or []
-    if isinstance(matches, list) and matches:
-        first = matches[0]
-        if isinstance(first, dict):
-            return _clean(first.get("tiers"))
     return None
 
 
@@ -405,9 +418,14 @@ def build_bilan_from_dossier(dossier: Any) -> dict[str, Any]:
     identite = getattr(dossier, "identite", None) or {}
     tiers = resolve_tiers(identite)
     if not tiers:
+        if lookup_status(identite) == "MULTIPLE":
+            raise ValueError(
+                "Plusieurs clients correspondent : choisissez le client dans le "
+                "Référentiel clients avant l'envoi vers Ekip."
+            )
         raise ValueError(
-            "N° tiers manquant : relancez l'extraction pour rapprocher le client "
-            "via /ia-clients/search avant l'envoi du bilan."
+            "N° tiers manquant : saisissez-le dans le Référentiel clients avant "
+            "l'envoi vers Ekip."
         )
     values = effective_values(dossier)
     # Si le résultat n'a que current.observed_value (pas value), tenter la lecture.

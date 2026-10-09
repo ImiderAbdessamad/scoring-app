@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from app.core.config import settings
 from app.schemas.analyse import RCC_ELEMENTS, SCORING_EXTRA_ELEMENTS
+from app.services.ia_clients_service import resolve_tiers
 from app.services.rcc_projection import build_identite, clean_activite, export_rcc_clean, project_rcc_result
 
 STATUS_LABELS = {
@@ -75,6 +76,8 @@ class RccDossier:
     origin: str = "rcc"
 
     def summary(self) -> dict[str, Any]:
+        # N° tiers réellement retenu pour Ekip (vide tant qu'un choix est attendu).
+        tiers = resolve_tiers(self.identite)
         return {
             "id": self.id,
             "job_id": self.job_id,
@@ -95,7 +98,7 @@ class RccDossier:
             "comment": self.comment,
             "decided_by": self.decided_by,
             "decided_at": self.decided_at,
-            "identite": self.identite,
+            "identite": {**self.identite, "tiers": tiers},
             "identifiant_fiscal": self.identite.get("identifiant_fiscal"),
             "taxe_professionnelle": self.identite.get("taxe_professionnelle"),
             "adresse": self.identite.get("adresse"),
@@ -106,7 +109,8 @@ class RccDossier:
             "declaration_date": self.identite.get("declaration_date"),
             "declaration_time": self.identite.get("declaration_time"),
             "reference": self.identite.get("reference"),
-            "tiers": self.identite.get("tiers"),
+            "tiers": tiers,
+            "tiers_source": self.identite.get("tiers_source"),
             "client_lookup": self.identite.get("client_lookup"),
             "rc": self.identite.get("rc"),
             "bilans_push": self.bilans_push,
@@ -286,6 +290,31 @@ class RccDossierStore:
                 )
             return dossier
 
+    def set_tiers(self, dossier_id: str, tiers: str, source: str, actor: str) -> RccDossier | None:
+        """N° tiers choisi dans le référentiel (`selected`) ou saisi (`manual`), tracé dans l'audit."""
+        with self._lock:
+            dossier = self._items.get(dossier_id)
+            if dossier is None:
+                return None
+            before = resolve_tiers(dossier.identite)
+            dossier.identite = {**dossier.identite, "tiers": tiers, "tiers_source": source}
+            dossier.updated_at = _now()
+            self._audit.append(
+                {
+                    "kind": "event",
+                    "timestamp": dossier.updated_at,
+                    "actor": actor,
+                    "dossier_id": dossier.id,
+                    "client_name": dossier.client_name,
+                    "field_code": None,
+                    "field_label": "N° tiers",
+                    "before": before,
+                    "after": tiers,
+                    "action": "N° tiers choisi" if source == "selected" else "N° tiers saisi",
+                }
+            )
+            return dossier
+
     def mark_bilans_push(self, dossier_id: str, payload: dict[str, Any]) -> RccDossier | None:
         with self._lock:
             dossier = self._items.get(dossier_id)
@@ -373,6 +402,7 @@ def export_dossier_clean(dossier: RccDossier) -> dict[str, Any]:
             **identite,
             "raison_sociale": identite.get("raison_sociale") or dossier.client_name,
             "ice": identite.get("ice") or dossier.ice,
+            "tiers": resolve_tiers(identite),
             "postes": {},
         }
     payload = export_rcc_clean(dossier.scoring_result)
@@ -384,6 +414,8 @@ def export_dossier_clean(dossier: RccDossier) -> dict[str, Any]:
     payload.update({key: identite.get(key, payload.get(key)) for key in identite})
     payload["raison_sociale"] = payload.get("raison_sociale") or dossier.client_name
     payload["ice"] = payload.get("ice") or dossier.ice
+    # N° tiers retenu (unique, choisi ou saisi) : celui envoyé à Ekip.
+    payload["tiers"] = resolve_tiers(identite)
     payload["dossier_id"] = dossier.id
     payload["statut"] = dossier.status
     return payload
