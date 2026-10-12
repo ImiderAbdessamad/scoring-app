@@ -190,6 +190,10 @@ services:
   dossier-worker:
     image: wafabail-backend:local
     container_name: wafabail-dossier-worker
+    # Pas de serveur HTTP dans un worker : le contrôle hérité de l'image (curl :8000/health)
+    # échouerait toujours. Un worker qui plante s'arrête et `restart` le relance.
+    healthcheck:
+      disable: true
     command: ["python", "-u", "worker/dossier_worker.py"]
     depends_on:
       api:
@@ -206,6 +210,10 @@ services:
   scoring-worker:
     image: wafabail-backend:local
     container_name: wafabail-scoring-worker
+    # Pas de serveur HTTP dans un worker : le contrôle hérité de l'image (curl :8000/health)
+    # échouerait toujours. Un worker qui plante s'arrête et `restart` le relance.
+    healthcheck:
+      disable: true
     command: ["python", "-u", "worker/scoring_worker.py"]
     depends_on:
       api:
