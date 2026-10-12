@@ -138,6 +138,9 @@ class PartnerAnalyseResponse(BaseModel):
     job_id: str | None = None
     progress_pct: int | None = None
     message: str | None = None
+    policy_version: str | None = None
+    current_page: int | None = None
+    pages_total: int | None = None
     score: int | None = None
     classe: str | None = None
     decision: str | None = None

@@ -16,7 +16,9 @@ from app.schemas.pvc import (
     PartnerRatioItem,
     PvcDossierPv,
 )
+from app import config
 from app.services import dossier_service, dossier_store, kafka_publisher
+from app.services import ocr_lab_core_v10 as engine
 from app.services.analyse_job_store import job_store
 
 logger = logging.getLogger(__name__)
@@ -238,7 +240,7 @@ def build_partner_analyse(record: StoredDossierRecord) -> PartnerAnalyseResponse
                 ice = ice or str(field.get("value"))
             if label == "rc" and field.get("value") not in (None, "—"):
                 rc = rc or str(field.get("value"))
-            if label in {"période", "exercice"} and field.get("value") not in (None, "—"):
+            if label == "exercice" and field.get("value") not in (None, "—"):
                 exercise = str(field.get("value"))
 
     ratios = [
@@ -254,7 +256,7 @@ def build_partner_analyse(record: StoredDossierRecord) -> PartnerAnalyseResponse
     message = None
     error = None
     if job_status in {"queued", "processing"}:
-        message = "Analyse en file d'attente ou en cours."
+        message = (job.message if job else None) or "Analyse en file d'attente ou en cours."
     elif job_status == "failed":
         error = (job.error if job else None) or "L'analyse a échoué."
         message = error
@@ -281,6 +283,9 @@ def build_partner_analyse(record: StoredDossierRecord) -> PartnerAnalyseResponse
         job_id=job.job_id if job else record.analyseJobId,
         progress_pct=job.progress_pct if job else None,
         message=message,
+        policy_version=f"{engine.PIPELINE_VERSION} · {config.RCC_VISION_MODEL}",
+        current_page=job.current_page if job else None,
+        pages_total=job.pages_total if job else None,
         score=int(round(float(scoring.get("score")))) if scoring.get("score") is not None else record.score or None,
         classe=scoring.get("classe") or header.get("classe"),
         decision=scoring.get("riskLabel"),
