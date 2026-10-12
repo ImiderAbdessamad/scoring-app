@@ -117,7 +117,7 @@ def extractor_path() -> Path:
     candidates = []
     if env:
         candidates.append(Path(env))
-    # Local : WFB/financial_pdf_extractor-V6_corrected.py
+    # Local : backend/financial_pdf_extractor-V6_corrected.py
     # Docker : /app/financial_pdf_extractor-V6_corrected.py (WORKDIR /app)
     candidates.extend(
         [
@@ -131,7 +131,7 @@ def extractor_path() -> Path:
             return path
     raise FileNotFoundError(
         f"Extracteur V6 introuvable ({EXTRACTOR_FILENAME}). "
-        "Définissez WFB_V6_EXTRACTOR ou placez le fichier à la racine WFB."
+        "Définissez WFB_V6_EXTRACTOR ou placez le fichier dans backend/."
     )
 
 

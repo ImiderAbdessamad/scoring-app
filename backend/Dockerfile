@@ -1,3 +1,4 @@
+# Contexte de build : ce dossier (backend/).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,13 +29,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && tesseract --list-langs
 
-COPY backend/requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY backend/app /app/app
-COPY backend/worker /app/worker
+COPY app /app/app
+COPY worker /app/worker
 # CA interne Wafabail : vérification HTTPS de Keycloak (lue par app/core/config.py).
-COPY backend/certs /app/certs
+COPY certs /app/certs
 COPY financial_pdf_extractor-V6_corrected.py /app/financial_pdf_extractor-V6_corrected.py
 
 RUN useradd --create-home --uid 10001 appuser \

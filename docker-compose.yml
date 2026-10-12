@@ -116,8 +116,8 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     image: wafabail-backend:local
     container_name: wafabail-api
     depends_on:

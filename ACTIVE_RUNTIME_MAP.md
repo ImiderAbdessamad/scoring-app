@@ -27,7 +27,7 @@ app/api/v1/analyse.py
     -> analyse_job_store (mémoire + pdf_bytes — à retirer)
     -> scoring_lab_pipeline.run_scoring_job
         -> v6_extractor_bridge.run_v6_from_bytes
-            -> financial_pdf_extractor-V6_corrected.py (racine WFB)
+            -> backend/financial_pdf_extractor-V6_corrected.py
         -> v6_result_mapper.map_fields / identity / controls
         -> quality_gate.evaluate_quality
         -> ratio_engine / scoring_engine
@@ -50,7 +50,7 @@ app/api/v1/dossiers.py
 
 ## Config extracteur V6
 
-`WFB_V6_EXTRACTOR` / chemin relatif racine WFB : `financial_pdf_extractor-V6_corrected.py`  
+`WFB_V6_EXTRACTOR` / chemin relatif : `backend/financial_pdf_extractor-V6_corrected.py`  
 (`v6_extractor_bridge.py`).
 
 ## Tests existants (runtime)
