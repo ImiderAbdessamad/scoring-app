@@ -1,21 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { PageHero } from '@/components/layout/PageHero'
 import { Card } from '@/components/ui/Card'
-import { StatusBadge } from '@/components/ui/StatusBadge'
 import { USE_MOCK } from '@/config/env'
-import { LIST_FILTERS, dateFromDaysAgo, formatAmountMad } from '@/lib/format'
+import { dateFromDaysAgo, formatAmountMad } from '@/lib/format'
 import { displaySector } from '@/lib/sector'
 import { useCreateDossier } from '@/features/dossiers/create/CreateDossierProvider'
 import { fetchDossiers } from '@/services/api/dossiers'
 import { useAnalyseJobs } from '@/features/analyse/AnalyseJobsProvider'
 import {
-  getDossierStore,
   subscribeDossierStore,
 } from '@/services/mocks/dossierStore'
-import type { Dossier, DossierStatus } from '@/types/dossier'
+import type { Dossier } from '@/types/dossier'
 
 const PAGE_SIZE = 8
 
@@ -23,45 +22,17 @@ export function DossiersPage() {
   const { openCreateDossier } = useCreateDossier()
   const { jobs } = useAnalyseJobs()
   const [params, setParams] = useSearchParams()
-  const statusParam = (params.get('status') as DossierStatus | 'all' | null) ?? 'all'
+  const statusParam = 'all' as const
   const pageParam = Math.max(1, Number(params.get('page') ?? '1') || 1)
 
   const [queryInput, setQueryInput] = useState(params.get('q') ?? '')
   const [query, setQuery] = useState(params.get('q') ?? '')
   const [items, setItems] = useState<Dossier[]>([])
-  const [allForCounts, setAllForCounts] = useState<Dossier[]>([])
   const [loading, setLoading] = useState(true)
   const [storeTick, setStoreTick] = useState(0)
 
   useEffect(() => subscribeDossierStore(() => setStoreTick((n) => n + 1)), [])
 
-  useEffect(() => {
-    if (USE_MOCK) {
-      setAllForCounts(getDossierStore())
-      return
-    }
-    let cancelled = false
-    fetchDossiers({ status: 'all' })
-      .then((res) => {
-        if (!cancelled) setAllForCounts(res.items)
-      })
-      .catch(() => {
-        if (!cancelled) setAllForCounts([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [storeTick])
-
-  const counts = useMemo(() => {
-    const all = USE_MOCK ? getDossierStore() : allForCounts
-    const map: Record<string, number> = { all: all.length }
-    for (const f of LIST_FILTERS) {
-      if (f.key === 'all') continue
-      map[f.key] = all.filter((d) => d.status === f.key).length
-    }
-    return map
-  }, [storeTick, allForCounts])
 
   
   useEffect(() => {
@@ -122,13 +93,6 @@ export function DossiersPage() {
   const from = decoratedItems.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
   const to = Math.min(page * PAGE_SIZE, decoratedItems.length)
 
-  function setStatus(key: DossierStatus | 'all') {
-    const next = new URLSearchParams(params)
-    if (key === 'all') next.delete('status')
-    else next.set('status', key)
-    next.delete('page')
-    setParams(next)
-  }
 
   function goToPage(p: number) {
     const next = new URLSearchParams(params)
@@ -148,109 +112,55 @@ export function DossiersPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-none flex-wrap items-center justify-between gap-4 border-b border-wb-line bg-white px-6 py-[18px]">
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="m-0 text-[20px] font-extrabold tracking-tight text-slate-900">
-            Dossiers de crédit-bail
-          </h1>
-          <p className="m-0 mt-0.5 text-[12px] text-wb-muted">
-            {loading
-              ? 'Chargement…'
-              : items.length === 0
-                ? 'Aucun dossier'
-                : `${items.length} dossier(s) · affichage ${from}–${to}`}
-          </p>
-        </motion.div>
+      <PageHero
+        title="Dossiers de crédit-bail"
+        watermark="Dossiers"
+        subtitle={
+          loading
+            ? 'Chargement…'
+            : items.length === 0
+              ? 'Aucun dossier'
+              : `${items.length} dossier(s) · affichage ${from}–${to}`
+        }
+        actions={
+          <>
+            <label className="flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 backdrop-blur-[2px] focus-within:border-white/60 focus-within:bg-white/15">
+              <Search size={14} className="text-white/70" />
+              <input
+                value={queryInput}
+                onChange={(e) => setQueryInput(e.target.value)}
+                placeholder="Réf., entreprise, secteur, analyste…"
+                className="w-[240px] border-0 bg-transparent text-[12.5px] text-white outline-none placeholder:text-white/60"
+                aria-label="Rechercher un dossier"
+              />
+              {queryInput && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-white/70 hover:text-white"
+                  aria-label="Effacer la recherche"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </label>
+            <Button variant="primary" onClick={openCreateDossier}>
+              Nouveau dossier +
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <label className="flex items-center gap-2 rounded-[10px] border border-[#E2E5EA] bg-wb-surface px-3 py-2 focus-within:border-wb-accent focus-within:bg-white focus-within:ring-2 focus-within:ring-wb-accent/15">
-            <Search size={14} className="text-wb-faint" />
-            <input
-              value={queryInput}
-              onChange={(e) => setQueryInput(e.target.value)}
-              placeholder="Réf., entreprise, secteur, analyste…"
-              className="w-[240px] border-0 bg-transparent text-[12.5px] text-slate-900 outline-none placeholder:text-wb-faint"
-              aria-label="Rechercher un dossier"
-            />
-            {queryInput && (
-              <button
-                type="button"
-                onClick={clearSearch}
-                className="flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-wb-faint hover:text-slate-700"
-                aria-label="Effacer la recherche"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </label>
-          <Button variant="primary" onClick={openCreateDossier}>
-            Nouveau +
-          </Button>
-        </div>
-      </header>
-
-      <div className="wb-scroll flex-1 overflow-y-auto px-6 py-5 pb-10">
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {LIST_FILTERS.map((f) => {
-            const active = statusParam === f.key
-            const count = counts[f.key] ?? 0
-            const tone =
-              f.key === 'approved'
-                ? 'text-emerald-700'
-                : f.key === 'rejected'
-                  ? 'text-red-600'
-                  : f.key === 'reserved'
-                    ? 'text-amber-700'
-                    : ''
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setStatus(f.key)}
-                className={[
-                  'relative cursor-pointer whitespace-nowrap rounded-full border-0 px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors',
-                  active
-                    ? 'bg-wb-ink text-white'
-                    : ['bg-white ring-1 ring-wb-line hover:bg-wb-surface', tone || 'text-slate-600'].join(
-                        ' ',
-                      ),
-                ].join(' ')}
-              >
-                <span className="relative z-10">
-                  {f.label}
-                  {f.key !== 'all' && (
-                    <span
-                      className={[
-                        'ml-1.5 tabular-nums',
-                        active ? 'text-wb-rail' : tone ? 'opacity-80' : 'text-wb-faint',
-                      ].join(' ')}
-                    >
-                      ({count})
-                    </span>
-                  )}
-                </span>
-                {active && (
-                  <motion.span
-                    layoutId="filter-pill"
-                    className="absolute inset-0 z-0 rounded-full bg-wb-ink"
-                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                  />
-                )}
-              </button>
-            )
-          })}
-        </div>
-
+      <div className="wb-scroll flex-1 overflow-y-auto px-6 py-6 pb-10">
         <Card delay={0.1} className="overflow-hidden">
           <div className="wb-scroll overflow-x-auto">
-            <div className="min-w-[1080px]">
-              <div className="grid grid-cols-[140px_1fr_120px_112px_60px_150px_100px_88px_32px] gap-2 border-b border-wb-line bg-[#FAFBFC] px-4 py-2.5 text-[10.5px] font-bold uppercase tracking-[0.04em] text-wb-faint">
+            <div className="min-w-[960px]">
+              <div className="grid grid-cols-[140px_1fr_140px_120px_70px_120px_96px_40px] gap-2 border-b border-wb-line bg-[#F8FAFC] px-5 py-3 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-muted">
                 <div>Référence</div>
                 <div>Entreprise</div>
                 <div>Secteur</div>
                 <div>Montant</div>
                 <div>Durée</div>
-                <div>Statut</div>
                 <div>Analyste</div>
                 <div>Reçu</div>
                 <div />
@@ -283,38 +193,32 @@ export function DossiersPage() {
                   >
                     <Link
                       to={`/analyse/${d.id}`}
-                      className="grid grid-cols-[140px_1fr_120px_112px_60px_150px_100px_88px_32px] items-center gap-2 border-b border-[#F1F2F4] px-4 py-3.5 text-[13px] no-underline transition-colors hover:bg-[#FBFCFD] last:border-b-0"
+                      className="grid grid-cols-[140px_1fr_140px_120px_70px_120px_96px_40px] group items-center gap-2 border-b border-wb-line px-5 py-4 text-[13px] no-underline transition-colors hover:bg-wb-accent-soft/40 last:border-b-0"
                     >
                       <div>
-                        <div className="font-mono text-[12.5px] font-bold text-wb-accent">
+                        <div className="font-mono text-[12.5px] font-bold text-wb-accent-text">
                           {d.id}
                         </div>
                         {d.source === 'pvc' && (
-                          <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-wb-faint">
+                          <span className="mt-1 inline-flex rounded-[8px] bg-wb-surface px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-wb-muted">
                             PVC{d.noPv ? ` · ${d.noPv}` : ''}
-                          </div>
+                          </span>
                         )}
                       </div>
-                      <div className="truncate font-bold text-slate-800">{d.name}</div>
+                      <div className="truncate text-[14px] font-bold text-[#1C1B1B]">{d.name}</div>
                       <div className="text-wb-muted">{displaySector(d.sector)}</div>
                       <div className="font-bold tabular-nums text-slate-900">
                         {formatAmountMad(d.amount)}
                       </div>
                       <div className="tabular-nums text-wb-muted">{d.duration}m</div>
-                      <div>
-                        <StatusBadge status={d.status} />
-                        {typeof d.analyseProgressPct === 'number' && d.status === 'analyzing' && (
-                          <div className="mt-1 text-[10.5px] font-semibold tabular-nums text-blue-700">
-                            {d.analyseProgressPct} %
-                          </div>
-                        )}
-                      </div>
                       <div className="text-wb-muted">{d.analyst}</div>
                       <div className="tabular-nums text-wb-faint">
                         {d.date || dateFromDaysAgo(d.receivedDaysAgo)}
                       </div>
-                      <div className="flex justify-end text-wb-faint">
-                        <ChevronRight size={16} />
+                      <div className="flex justify-end">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-wb-surface text-wb-muted transition-colors group-hover:bg-wb-accent group-hover:text-white">
+                          <ChevronRight size={15} strokeWidth={2.2} />
+                        </span>
                       </div>
                     </Link>
                   </motion.div>
@@ -326,7 +230,7 @@ export function DossiersPage() {
                   {Array.from({ length: 6 }).map((_, i) => (
                     <div
                       key={i}
-                      className="h-[56px] animate-pulse border-b border-[#F1F2F4] bg-gradient-to-r from-transparent via-slate-50 to-transparent"
+                      className="h-[60px] animate-pulse border-b border-wb-line bg-gradient-to-r from-transparent via-slate-50 to-transparent"
                     />
                   ))}
                 </div>
@@ -335,7 +239,7 @@ export function DossiersPage() {
           </div>
 
           {!loading && items.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-wb-line px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-wb-line px-5 py-3.5">
               <div className="text-[12px] text-wb-muted">
                 Page <span className="font-semibold text-slate-800">{page}</span> /{' '}
                 {totalPages}
@@ -345,7 +249,7 @@ export function DossiersPage() {
                   type="button"
                   disabled={page <= 1}
                   onClick={() => goToPage(page - 1)}
-                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-wb-surface text-slate-600 transition-colors hover:bg-white hover:ring-1 hover:ring-wb-line disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-wb-line bg-white text-slate-600 transition-colors hover:border-wb-accent hover:text-wb-accent-text disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Page précédente"
                 >
                   <ChevronLeft size={16} />
@@ -356,9 +260,9 @@ export function DossiersPage() {
                     type="button"
                     onClick={() => goToPage(p)}
                     className={[
-                      'inline-flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-lg border-0 px-2 text-[12.5px] font-semibold transition-colors',
+                      'inline-flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-full border-0 px-2.5 text-[12.5px] font-semibold transition-colors',
                       p === page
-                        ? 'bg-wb-ink text-white'
+                        ? 'bg-wb-accent text-white'
                         : 'bg-transparent text-slate-600 hover:bg-wb-surface',
                     ].join(' ')}
                   >
@@ -369,7 +273,7 @@ export function DossiersPage() {
                   type="button"
                   disabled={page >= totalPages}
                   onClick={() => goToPage(page + 1)}
-                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-wb-surface text-slate-600 transition-colors hover:bg-white hover:ring-1 hover:ring-wb-line disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-wb-line bg-white text-slate-600 transition-colors hover:border-wb-accent hover:text-wb-accent-text disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Page suivante"
                 >
                   <ChevronRight size={16} />

@@ -7,47 +7,46 @@ type Props = {
   document: DocumentItem | undefined
 }
 
+/** Données extraites du document, en liste « libellé → valeur » (colonne droite de la Vue générale). */
 export function ExtractionPanel({ extraction, document }: Props) {
   return (
-    <Card delay={0.1} className="p-4">
-      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-wb-accent-soft text-wb-accent">
-            <Sparkles size={14} strokeWidth={1.9} />
-          </span>
-          <div>
-            <div className="text-[13px] font-bold text-slate-900">
-              {extraction?.title ?? document?.name ?? 'Extraction IA'}
-            </div>
-            <div className="text-[10.5px] text-wb-faint">Champs extraits automatiquement</div>
+    <Card delay={0.1} className="overflow-hidden p-0">
+      <div className="flex items-start gap-3 px-5 pb-3 pt-5">
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-wb-accent text-white">
+          <Sparkles size={14} strokeWidth={1.9} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[16px] font-semibold text-[#1C1B1B]">Données extraites</div>
+          <div className="truncate text-[11.5px] text-wb-muted" title={extraction?.title ?? document?.name}>
+            {extraction?.title ?? document?.name ?? 'Document'}
           </div>
+          {extraction && (
+            <span className="mt-2 inline-flex rounded-[8px] bg-wb-surface px-2 py-0.5 text-[11px] font-semibold text-wb-muted">
+              {extraction.flag}
+            </span>
+          )}
         </div>
-        {extraction && (
-          <span className="rounded-full bg-wb-surface px-2.5 py-1 text-[11px] font-semibold text-wb-muted">
-            {extraction.flag}
-          </span>
-        )}
       </div>
 
       {extraction ? (
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <dl className="wb-scroll m-0 max-h-[520px] overflow-y-auto px-5 pb-3">
           {extraction.fields.map((field) => (
-            <div key={field.label} className="rounded-[10px] border border-wb-line bg-wb-surface/60 p-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10.5px] font-bold uppercase tracking-[0.03em] text-wb-faint">
-                  {field.label}
-                </span>
-                <span className="text-[10px] font-bold tabular-nums text-wb-faint">
-                  {field.confidence == null ? '—' : `${field.confidence}%`}
-                </span>
-              </div>
-              <div className="mt-1 break-words text-[13.5px] font-bold text-slate-900">{field.value}</div>
-              <div className="mt-0.5 break-words text-[10.5px] text-wb-faint">{field.source}</div>
+            <div key={field.label} className="flex items-start justify-between gap-4 border-t border-wb-line py-2.5">
+              <dt className="min-w-0">
+                <div className="text-[12.5px] text-slate-600">{field.label}</div>
+                <div className="mt-0.5 truncate text-[10.5px] text-wb-faint" title={field.source}>
+                  {field.source}
+                  {field.confidence == null ? '' : ` · ${field.confidence} %`}
+                </div>
+              </dt>
+              <dd className="m-0 max-w-[55%] break-words text-right text-[13px] font-semibold text-[#1C1B1B]">
+                {field.value}
+              </dd>
             </div>
           ))}
-        </div>
+        </dl>
       ) : (
-        <div className="rounded-[10px] border border-dashed border-wb-line px-4 py-6 text-center text-[12.5px] text-wb-faint">
+        <div className="mx-5 mb-5 rounded-[14px] border border-dashed border-wb-line px-4 py-6 text-center text-[12.5px] text-wb-faint">
           Aucune extraction disponible pour ce document.
         </div>
       )}

@@ -68,7 +68,7 @@ export function ConfirmDialog({
             type="button"
             aria-label="Fermer"
             disabled={loading}
-            className="absolute inset-0 cursor-default border-0 bg-[#15110e]/55 backdrop-blur-[2px]"
+            className="absolute inset-0 cursor-default border-0 bg-[#0d0d0d]/55 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

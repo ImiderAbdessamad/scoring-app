@@ -128,9 +128,4 @@ export const LIST_FILTERS: Array<{ key: DossierStatus | 'all'; label: string }> 
   { key: 'ready', label: 'Prêt à analyser' },
   { key: 'analyzing', label: 'En analyse' },
   { key: 'review', label: 'Revue analyste' },
-  { key: 'approved', label: 'Approuvé' },
-  { key: 'reserved', label: 'Sous réserve' },
-  { key: 'rejected', label: 'Rejeté' },
-  { key: 'pending', label: 'En attente' },
-  { key: 'committee', label: 'Comité' },
 ]

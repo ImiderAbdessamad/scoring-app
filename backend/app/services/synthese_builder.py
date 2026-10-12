@@ -187,19 +187,8 @@ def _points_vigilance(result, *, nouveau_financement: float | None) -> list[str]
         qualifier = "non conforme" if status == "Non conforme" else "à surveiller"
         vigilance.append(f"{label} {qualifier} ({_fmt_ratio(key, value)}).")
 
-    if getattr(result, "readiness", None) and result.readiness.blocking_reasons:
-        for reason in result.readiness.blocking_reasons[:8]:
-            vigilance.append(reason)
-    for control in getattr(result, "controls", []) or []:
-        if getattr(control, "status", None) == "failed":
-            vigilance.append(f"Contrôle comptable en écart — {control.label}.")
-    fiscal = getattr(result, "fiscal_analysis", None)
-    if fiscal and fiscal.warnings:
-        vigilance.extend(str(w) for w in fiscal.warnings[:4])
-    capital = getattr(result, "capital_analysis", None)
-    if capital and capital.warnings:
-        vigilance.extend(str(w) for w in capital.warnings[:4])
-
+    # Points métier uniquement : la qualité de lecture (conflits, valeurs suspectes, inputs de
+    # scoring), les contrôles d'extraction et les codes de l'extracteur ne sont pas affichés.
     return vigilance
 
 

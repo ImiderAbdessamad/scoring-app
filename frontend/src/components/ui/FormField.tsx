@@ -196,7 +196,7 @@ export function ChoiceCard({ label, description, selected, onSelect, error }: Ch
       className={[
         'flex flex-1 cursor-pointer flex-col items-start rounded-[12px] border px-4 py-3.5 text-left transition-all',
         selected
-          ? 'border-wb-accent bg-wb-accent-soft shadow-[0_0_0_1px_rgba(232,93,12,0.25)]'
+          ? 'border-wb-accent bg-wb-accent-soft shadow-[0_0_0_1px_rgba(255,155,38,0.25)]'
           : error
             ? 'border-red-300 bg-white hover:border-red-400'
             : 'border-[#E2E5EA] bg-white hover:border-wb-accent-border hover:bg-[#FFFCFA]',
@@ -205,7 +205,7 @@ export function ChoiceCard({ label, description, selected, onSelect, error }: Ch
       <span
         className={[
           'text-[13px] font-bold',
-          selected ? 'text-wb-accent' : 'text-slate-800',
+          selected ? 'text-wb-accent-text' : 'text-slate-800',
         ].join(' ')}
       >
         {label}

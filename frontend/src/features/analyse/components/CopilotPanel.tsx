@@ -102,7 +102,7 @@ export function CopilotPanel({ copilot, messages, input, thinking, onChangeInput
               type="button"
               onClick={() => onSend(chip.label, chip.intent)}
               disabled={thinking}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-wb-accent-border bg-wb-accent-soft px-2.5 py-1 text-[11px] font-semibold text-wb-accent transition-colors hover:bg-[#FFEBD7] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-wb-accent-border bg-wb-accent-soft px-2.5 py-1 text-[11px] font-semibold text-wb-accent-text transition-colors hover:bg-[#FFEBD7] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={10} />
               {chip.label}

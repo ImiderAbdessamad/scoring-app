@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { formatSectorAmount, formatSectorPeriod, formatSignedPct } from '@/lib/sectorFormat'
 import type { GrowthComparisonPoint, NormalizedSectorPoint, SectorSeriesPoint } from '@/types/analyse'
 
-const ORANGE = '#e85d0c'
+const ORANGE = '#ff9b26'
 const INK = '#111827'
 const MUTED = '#94a3b8'
 
@@ -197,7 +197,7 @@ export function SectorQuarterlyTrendChart({ series }: { series: SectorSeriesPoin
             type="button"
             onClick={() => setMode(m)}
             className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
-              mode === m ? 'border-wb-accent bg-wb-accent-soft text-wb-accent' : 'border-wb-line text-wb-muted'
+              mode === m ? 'border-wb-accent bg-wb-accent-soft text-wb-accent-text' : 'border-wb-line text-wb-muted'
             }`}
           >
             {m === 'value' ? 'Valeur' : 'Croissance YoY'}

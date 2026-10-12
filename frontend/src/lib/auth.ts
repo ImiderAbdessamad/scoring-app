@@ -71,5 +71,6 @@ export function currentUser() {
     ? [claims.given_name, claims.family_name]
     : name.split(/\s+/)
   const initials = parts.slice(0, 2).map((part) => part[0] ?? '').join('').toUpperCase()
-  return { name, initials }
+  const firstName = claims.given_name || parts[0] || name
+  return { name, firstName, initials }
 }

@@ -175,7 +175,7 @@ export function FancySelect({
                     className={[
                       'flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] border-0 px-3 py-2.5 text-left transition-colors',
                       active
-                        ? 'bg-wb-accent-soft text-wb-accent'
+                        ? 'bg-wb-accent-soft text-wb-accent-text'
                         : 'bg-transparent text-slate-800 hover:bg-wb-surface',
                     ].join(' ')}
                   >

@@ -5,13 +5,13 @@ import type { AnalystActivity, AlertItem, RiskBucket, SectorStat } from '@/types
 const RISK_COLOR: Record<RiskBucket['tone'], string> = {
   low: '#16A34A',
   mid: '#B45309',
-  high: '#DC2626',
+  high: '#DB2424',
   critical: '#7F1D1D',
   unknown: '#64748B',
 }
 
 const ALERT_TONE = {
-  danger: { color: '#DC2626', bg: '#FEF2F2' },
+  danger: { color: '#DB2424', bg: '#FEF2F2' },
   warn: { color: '#B45309', bg: '#FFF8EC' },
   info: { color: '#7C3AED', bg: '#F5F3FF' },
   success: { color: '#15803D', bg: '#ECFDF5' },
@@ -35,9 +35,9 @@ export function DashboardSidePanels({
   const unread = alerts.filter((a) => !a.read).length
 
   return (
-    <div className="flex flex-col gap-3.5">
-      <Card delay={0.32} className="p-4">
-        <div className="mb-3.5 text-[13px] font-bold text-slate-900">
+    <div className="flex flex-col gap-4">
+      <Card delay={0.32} className="p-5">
+        <div className="mb-4 text-[15px] font-semibold text-[#1C1B1B]">
           Distribution des risques · {riskActiveTotal} actifs
         </div>
         <div className="flex flex-col gap-2.5">
@@ -49,12 +49,12 @@ export function DashboardSidePanels({
               >
                 {rd.label}
               </div>
-              <div className="h-2 flex-1 overflow-hidden rounded-md bg-[#EEF0F3]">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#EEF0F3]">
                 <motion.div
                   initial={{ width: 0 }}
                   animate={{ width: `${rd.pct}%` }}
                   transition={{ delay: 0.4 + i * 0.08, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-                  className="h-full rounded-md"
+                  className="h-full rounded-full"
                   style={{ background: RISK_COLOR[rd.tone] }}
                 />
               </div>
@@ -82,8 +82,8 @@ export function DashboardSidePanels({
       </Card>
 
       <Card delay={0.38} className="overflow-hidden p-0">
-        <div className="flex items-center justify-between px-4 pt-4">
-          <div className="text-[13px] font-bold text-slate-900">Alertes récentes</div>
+        <div className="flex items-center justify-between px-5 pt-5">
+          <div className="text-[15px] font-semibold text-[#1C1B1B]">Alertes récentes</div>
           <span className="rounded-full bg-wb-accent px-2 py-0.5 text-[10px] font-bold text-white">
             {unread || alerts.length}
           </span>
@@ -111,7 +111,7 @@ export function DashboardSidePanels({
                   <div className="mt-1 text-[10.5px] text-wb-faint">{a.time}</div>
                 </div>
                 <span
-                  className="rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+                  className="rounded-[8px] px-2 py-1 text-[10.5px] font-semibold"
                   style={{ color: tone.color, background: tone.bg }}
                 >
                   {a.type}
@@ -122,10 +122,8 @@ export function DashboardSidePanels({
         </ul>
       </Card>
 
-      <Card delay={0.44} dark className="p-4">
-        <div className="mb-3 text-[12px] font-bold uppercase tracking-[0.04em] text-[#6f675e]">
-          Mon activité
-        </div>
+      <Card delay={0.44} dark className="p-5">
+        <div className="mb-3.5 text-[15px] font-semibold text-white">Mon activité</div>
         <div className="grid grid-cols-2 gap-2.5">
           {[
             { v: activity.today, l: "Aujourd'hui" },
@@ -135,7 +133,7 @@ export function DashboardSidePanels({
           ].map((cell) => (
             <div
               key={cell.l}
-              className="rounded-[9px] bg-[#1d1813] p-2.5 text-center"
+              className="rounded-[14px] bg-[rgba(30,25,22,0.6)] p-3 text-center ring-1 ring-white/10 backdrop-blur-[2px]"
             >
               <div
                 className={`text-[22px] font-extrabold tabular-nums ${
@@ -144,7 +142,7 @@ export function DashboardSidePanels({
               >
                 {cell.v}
               </div>
-              <div className="mt-0.5 text-[10.5px] text-[#6f675e]">{cell.l}</div>
+              <div className="mt-0.5 text-[11px] text-white/60">{cell.l}</div>
             </div>
           ))}
         </div>

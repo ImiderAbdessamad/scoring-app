@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Database, RefreshCw, ShieldAlert } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
+import { PageHero } from '@/components/layout/PageHero'
 import {
   fetchSectorSources,
   refreshSectorData,
@@ -115,21 +116,15 @@ export function SectorSourcesConfigPage() {
   }
 
   return (
-    <div className="wb-scroll flex-1 overflow-y-auto px-6 py-5">
-      <div className="mb-5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-wb-faint">
-          Configuration
-        </div>
-        <h1 className="m-0 mt-1 text-[22px] font-extrabold tracking-tight text-slate-900">
-          Sources de données sectorielles
-        </h1>
-        <p className="m-0 mt-2 max-w-3xl text-[13.5px] leading-relaxed text-wb-muted">
-          Choisissez la source utilisée pour l’analyse sectorielle. Par défaut : HCP. Les autres
-          sources peuvent être préparées sans écraser les dossiers déjà analysés.
-        </p>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHero
+        title="Sources de données sectorielles"
+        watermark="Configuration"
+        subtitle="Choisissez la source utilisée pour l’analyse sectorielle. Par défaut : HCP. Les autres sources peuvent être préparées sans écraser les dossiers déjà analysés."
+      />
+      <div className="wb-scroll flex-1 overflow-y-auto px-6 py-6 pb-10">
 
-      <Card className="mb-4 border-amber-200/80 bg-[#FFFBF5] p-4">
+      <Card className="mb-5 border-amber-200/80 bg-[#FFFBF5] p-5">
         <div className="flex items-start gap-2.5">
           <ShieldAlert size={16} className="mt-0.5 text-[#B45309]" />
           <div className="text-[12.5px] leading-relaxed text-amber-950">
@@ -157,7 +152,7 @@ export function SectorSourcesConfigPage() {
 
       {(error || notice) && (
         <div
-          className={`mb-4 rounded-[10px] border px-4 py-2.5 text-[12.5px] ${
+          className={`mb-4 rounded-[14px] border px-4 py-3 text-[12.5px] ${
             error
               ? 'border-red-200 bg-red-50 text-red-800'
               : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -170,39 +165,42 @@ export function SectorSourcesConfigPage() {
       {loading && !config ? (
         <Card className="p-5 text-[13px] text-wb-muted">Chargement…</Card>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {(config?.items || []).map((source) => {
             const busy = busyId === source.id
             return (
-              <Card key={source.id} className="p-5">
+              <Card
+                key={source.id}
+                className={`p-6 ${source.isDefault ? 'border-wb-accent shadow-[0_0_0_1px_#FF9B26]' : ''}`}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-wb-accent-soft text-wb-accent">
+                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-wb-accent text-white">
                       <Database size={18} strokeWidth={1.8} />
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-[14px] font-bold text-slate-900">{source.label}</div>
+                        <div className="text-[16px] font-semibold text-[#1C1B1B]">{source.label}</div>
                         {source.isDefault ? (
-                          <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10.5px] font-bold text-[#15803D]">
+                          <span className="rounded-[8px] bg-[#ECFDF5] px-2 py-0.5 text-[11px] font-semibold text-[#15803D]">
                             Défaut
                           </span>
                         ) : null}
                         {!source.implemented ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold text-slate-600">
+                          <span className="rounded-[8px] bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                             Bientôt
                           </span>
                         ) : null}
                       </div>
-                      <p className="m-0 mt-1 text-[12.5px] text-wb-muted">{source.description}</p>
+                      <p className="m-0 mt-1.5 text-[13px] leading-relaxed text-wb-muted">{source.description}</p>
                       {source.notes ? (
                         <p className="m-0 mt-1 text-[11.5px] text-wb-faint">{source.notes}</p>
                       ) : null}
-                      <div className="mt-2 flex flex-wrap gap-1.5">
+                      <div className="mt-3 flex flex-wrap gap-1.5">
                         {source.capabilities.map((cap) => (
                           <span
                             key={cap}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+                            className="rounded-[8px] bg-wb-surface px-2 py-1 text-[10.5px] font-semibold text-slate-600 ring-1 ring-wb-line"
                           >
                             {cap}
                           </span>
@@ -217,30 +215,24 @@ export function SectorSourcesConfigPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-stretch gap-2 sm:min-w-[200px]">
-                    <label className="flex items-center justify-between gap-3 text-[12.5px] text-slate-700">
-                      <span>Activée</span>
-                      <input
-                        type="checkbox"
-                        checked={source.enabled}
-                        disabled={busy || (source.isDefault && source.enabled)}
-                        onChange={(e) => void toggleEnabled(source, e.target.checked)}
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-3 text-[12.5px] text-slate-700">
-                      <span>Sélectionnable (analyse)</span>
-                      <input
-                        type="checkbox"
-                        checked={source.selectable}
-                        disabled={busy || !source.enabled || !source.supportsVaAnalysis}
-                        onChange={(e) => void toggleSelectable(source, e.target.checked)}
-                      />
-                    </label>
+                  <div className="flex flex-col items-stretch gap-3 sm:min-w-[220px]">
+                    <Switch
+                      label="Activée"
+                      checked={source.enabled}
+                      disabled={busy || (source.isDefault && source.enabled)}
+                      onChange={(checked) => void toggleEnabled(source, checked)}
+                    />
+                    <Switch
+                      label="Sélectionnable (analyse)"
+                      checked={source.selectable}
+                      disabled={busy || !source.enabled || !source.supportsVaAnalysis}
+                      onChange={(checked) => void toggleSelectable(source, checked)}
+                    />
                     <button
                       type="button"
                       disabled={busy || source.isDefault || !source.supportsVaAnalysis || !source.enabled}
                       onClick={() => void makeDefault(source)}
-                      className="rounded-[8px] border border-wb-line px-3 py-1.5 text-[12px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="cursor-pointer rounded-full border border-wb-line bg-white px-4 py-2 text-[12.5px] font-semibold text-slate-700 transition-colors hover:border-wb-accent hover:text-wb-accent-text disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {source.isDefault ? 'Source par défaut' : 'Définir comme défaut'}
                     </button>
@@ -249,7 +241,7 @@ export function SectorSourcesConfigPage() {
                         type="button"
                         disabled={syncBusyId !== null}
                         onClick={() => void syncSource(source)}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-[8px] bg-wb-accent px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-60"
+                        className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full border-0 bg-wb-accent px-4 py-2 text-[12.5px] font-bold text-white transition-[filter] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <RefreshCw size={13} className={syncBusyId === source.id ? 'animate-spin' : ''} />
                         {syncBusyId === source.id ? 'Synchronisation…' : `Synchroniser ${source.shortLabel}`}
@@ -269,6 +261,45 @@ export function SectorSourcesConfigPage() {
           {config.updatedBy ? ` · ${config.updatedBy}` : ''}
         </p>
       ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Interrupteur (remplace la case à cocher) : orange quand il est activé. */
+function Switch({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[13px] text-slate-700">
+      <span>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={[
+          'relative h-6 w-11 flex-none cursor-pointer rounded-full border-0 p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+          checked ? 'bg-wb-accent' : 'bg-slate-300',
+        ].join(' ')}
+      >
+        <span
+          className={[
+            'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-[left]',
+            checked ? 'left-[22px]' : 'left-0.5',
+          ].join(' ')}
+        />
+      </button>
     </div>
   )
 }

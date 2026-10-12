@@ -14,12 +14,12 @@ const TABS: TabDef[] = [
   { id: 'ratios', label: 'Ratios' },
   { id: 'fiscal', label: 'Analyse fiscale' },
   { id: 'capital', label: 'Capital' },
-  { id: 'qualite', label: 'Contrôles & qualité' },
+  // Onglet masqué pour l'instant — réactivable en décommentant (voir aussi AnalysePage.tsx).
+  // { id: 'qualite', label: 'Préparation à la décision' },
   { id: 'bien', label: 'Bien financé' },
   { id: 'factorielle', label: 'Tendances' },
   { id: 'comportement', label: 'Comportement bancaire' },
   { id: 'benchmark', label: 'Analyse sectorielle' },
-  { id: 'memo', label: 'Mémo', badge: 'IA', badgeTone: 'ai' },
 ]
 
 type Props = {
@@ -29,7 +29,7 @@ type Props = {
 
 export function AnalyseTabs({ tab, onChange }: Props) {
   return (
-    <div className="flex gap-1 overflow-x-auto px-6">
+    <div className="wb-scroll flex gap-1.5 overflow-x-auto px-6 pb-1 pt-4">
       {TABS.map((t) => {
         const active = tab === t.id
         return (
@@ -38,8 +38,8 @@ export function AnalyseTabs({ tab, onChange }: Props) {
             type="button"
             onClick={() => onChange(t.id)}
             className={[
-              'relative flex-none cursor-pointer whitespace-nowrap border-0 bg-transparent px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors',
-              active ? 'text-wb-ink' : 'text-wb-muted hover:text-slate-700',
+              'relative flex-none cursor-pointer whitespace-nowrap rounded-full border-0 px-4 py-2 text-[12.5px] font-semibold transition-colors',
+              active ? 'bg-transparent text-white' : 'bg-white text-slate-600 ring-1 ring-wb-line hover:bg-wb-surface',
             ].join(' ')}
           >
             <span className="relative z-10 inline-flex items-center gap-1.5">
@@ -49,7 +49,7 @@ export function AnalyseTabs({ tab, onChange }: Props) {
                   className={[
                     'inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full px-1 text-[9.5px] font-bold',
                     t.badgeTone === 'ai'
-                      ? 'bg-wb-ink text-wb-accent'
+                      ? 'bg-wb-accent text-white'
                       : 'bg-wb-accent text-white',
                   ].join(' ')}
                 >
@@ -59,8 +59,8 @@ export function AnalyseTabs({ tab, onChange }: Props) {
             </span>
             {active && (
               <motion.span
-                layoutId="analyse-tab-underline"
-                className="absolute inset-x-2 bottom-0 h-[2.5px] rounded-full bg-wb-accent"
+                layoutId="analyse-tab-pill"
+                className="absolute inset-0 rounded-full bg-wb-ink"
                 transition={{ type: 'spring', stiffness: 420, damping: 34 }}
               />
             )}

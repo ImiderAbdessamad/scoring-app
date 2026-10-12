@@ -25,7 +25,7 @@ export function DocumentsPanel({
   const pendingDocIdRef = useRef<string | null>(null)
 
   const barColor =
-    documents.completenessPct >= 85 ? '#16A34A' : documents.completenessPct >= 60 ? '#B45309' : '#DC2626'
+    documents.completenessPct >= 85 ? '#16A34A' : documents.completenessPct >= 60 ? '#B45309' : '#DB2424'
 
   function openUpload(docId: string) {
     if (!uploadable || !onUpload) return
@@ -44,7 +44,7 @@ export function DocumentsPanel({
   }
 
   return (
-    <Card delay={0.05} className="p-4">
+    <Card delay={0.05} className="p-5">
       <input
         ref={inputRef}
         type="file"
@@ -54,7 +54,7 @@ export function DocumentsPanel({
       />
 
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-[13px] font-bold text-slate-900">
+        <div className="text-[16px] font-semibold text-[#1C1B1B]">
           Documents · {documents.present}/{documents.total}
         </div>
         <span className="text-[12px] font-bold tabular-nums" style={{ color: barColor }}>
@@ -93,7 +93,7 @@ export function DocumentsPanel({
           type="button"
           onClick={() => openUpload('__add__')}
           disabled={uploadingDocId === '__add__'}
-          className="mb-3 inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-wb-line bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-wb-surface disabled:opacity-60"
+          className="mb-3 inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-full border border-dashed border-wb-accent-border bg-white px-4 py-2.5 text-[12.5px] font-semibold text-wb-accent-text transition-colors hover:border-wb-accent hover:bg-wb-accent-soft disabled:opacity-60"
         >
           <Upload size={14} strokeWidth={1.9} />
           {uploadingDocId === '__add__' ? 'Ajout et analyse…' : 'Ajouter un document et analyser'}
@@ -116,15 +116,15 @@ export function DocumentsPanel({
                 onClick={() => onSelect(doc.id)}
                 disabled={uploading}
                 className={[
-                  'flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] border-0 px-2.5 py-2 text-left transition-colors',
+                  'flex w-full cursor-pointer items-center gap-2.5 rounded-[12px] border-0 px-2.5 py-2 text-left transition-colors',
                   active ? 'bg-wb-accent-soft' : 'hover:bg-wb-surface',
                   uploading ? 'opacity-60' : '',
                 ].join(' ')}
               >
                 <span
                   className={[
-                    'flex h-8 w-8 flex-none items-center justify-center rounded-[8px]',
-                    active ? 'bg-white text-wb-accent' : 'bg-wb-surface text-wb-muted',
+                    'flex h-8 w-8 flex-none items-center justify-center rounded-full',
+                    active ? 'bg-wb-accent text-white' : 'bg-wb-surface text-wb-muted',
                   ].join(' ')}
                 >
                   <FileText size={14} strokeWidth={1.9} />
@@ -133,7 +133,7 @@ export function DocumentsPanel({
                   <div
                     className={[
                       'truncate text-[12.5px] font-semibold',
-                      active ? 'text-wb-accent' : 'text-slate-800',
+                      active ? 'text-wb-accent-text' : 'text-slate-800',
                     ].join(' ')}
                   >
                     {doc.name}
@@ -154,9 +154,9 @@ export function DocumentsPanel({
       </ul>
 
       {documents.missing.length > 0 && (
-        <div className="mt-3.5 border-t border-[#F1F2F4] pt-3.5">
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-faint">
-            <AlertTriangle size={12} className="text-[#B45309]" />
+        <div className="mt-3.5 border-t border-wb-line pt-3.5">
+          <div className="mb-2.5 flex items-center gap-1.5 text-[13px] font-semibold text-[#1C1B1B]">
+            <AlertTriangle size={14} className="text-[#B45309]" />
             Pièces manquantes
           </div>
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -173,7 +173,7 @@ export function DocumentsPanel({
                       }}
                       disabled={uploading}
                       className={[
-                        'flex w-full cursor-pointer items-start gap-2 rounded-[10px] border-0 bg-[#FFF8EC] px-2.5 py-2 text-left transition-colors hover:bg-[#FFEBD7]',
+                        'flex w-full cursor-pointer items-start gap-2 rounded-[12px] border-0 bg-[#FFF8EC] px-3 py-2.5 text-left transition-colors hover:bg-[#FFEBD7]',
                         uploading ? 'opacity-60' : '',
                       ].join(' ')}
                     >
@@ -186,7 +186,7 @@ export function DocumentsPanel({
                       </div>
                     </button>
                   ) : (
-                    <div className="flex items-start gap-2 rounded-[10px] bg-[#FFF8EC] px-2.5 py-2">
+                    <div className="flex items-start gap-2 rounded-[12px] bg-[#FFF8EC] px-3 py-2.5">
                       <FileCheck2 size={14} className="mt-0.5 flex-none text-[#B45309]" strokeWidth={1.9} />
                       <div className="min-w-0">
                         <div className="truncate text-[12px] font-semibold text-[#92400E]">{m.name}</div>

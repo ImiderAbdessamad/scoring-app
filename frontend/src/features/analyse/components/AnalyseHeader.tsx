@@ -1,54 +1,29 @@
 import { Link } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
-import {
-  Bot,
-  Check,
-  ChevronRight,
-  TriangleAlert,
-  X,
-} from 'lucide-react'
-import { STATUS_META, formatAmountMad } from '@/lib/format'
+import { Bot, ChevronRight } from 'lucide-react'
+import { formatAmountMad } from '@/lib/format'
 import { AnalyseTabs } from '@/features/analyse/components/AnalyseTabs'
-import type { AnalyseHeader as AnalyseHeaderData, AnalyseTabId, DecisionEligibility, DecisionKind } from '@/types/analyse'
+import { HERO_BACKGROUND } from '@/components/layout/heroBackground'
+import type {
+  AnalyseHeader as AnalyseHeaderData,
+  AnalyseTabId,
+  ClientLookup,
+  DecisionEligibility,
+  IaClientMatch,
+  DecisionKind,
+} from '@/types/analyse'
 
-const DECISIONS: Array<{
-  kind: DecisionKind
-  label: string
-  icon: typeof Check
-  activeClass: string
-  idleClass: string
-}> = [
-  {
-    kind: 'approve',
-    label: 'Approuver',
-    icon: Check,
-    activeClass: 'bg-[#16A34A] text-white',
-    idleClass: 'bg-[#ECFDF5] text-[#15803D] hover:bg-[#DCFCE7]',
-  },
-  {
-    kind: 'reserve',
-    label: 'Sous réserve',
-    icon: TriangleAlert,
-    activeClass: 'bg-[#B45309] text-white',
-    idleClass: 'bg-[#FFF8EC] text-[#B45309] hover:bg-[#FFEBD7]',
-  },
-  {
-    kind: 'reject',
-    label: 'Rejeter',
-    icon: X,
-    activeClass: 'bg-[#DC2626] text-white',
-    idleClass: 'bg-[#FEF2F2] text-[#DC2626] hover:bg-[#FEE2E2]',
-  },
-]
-
-const DECISION_TOAST: Record<DecisionKind, { text: string; color: string; bg: string; icon: typeof Check }> = {
-  approve: { text: 'Dossier approuvé', color: '#15803D', bg: '#ECFDF5', icon: Check },
-  reserve: { text: 'Dossier approuvé sous réserve', color: '#B45309', bg: '#FFF8EC', icon: TriangleAlert },
-  reject: { text: 'Dossier rejeté', color: '#DC2626', bg: '#FEF2F2', icon: X },
+/** Statut de la recherche dans le référentiel clients, en étiquette claire sur le bandeau. */
+const LOOKUP_STATUS: Record<ClientLookup['status'], { label: string; className: string }> = {
+  MATCHED: { label: 'Client trouvé', className: 'bg-[#ECFDF5] text-[#15803D]' },
+  MULTIPLE: { label: 'Plusieurs correspondances', className: 'bg-[#FFF8EC] text-[#B45309]' },
+  NOT_FOUND: { label: 'Aucun client', className: 'bg-[rgba(250,250,250,0.95)] text-slate-700' },
+  SKIPPED: { label: 'Non recherché', className: 'bg-[rgba(250,250,250,0.95)] text-slate-500' },
+  ERROR: { label: 'API indisponible', className: 'bg-[#FEF2F2] text-[#B91C1C]' },
 }
 
 type Props = {
   header: AnalyseHeaderData
+  clientLookup?: ClientLookup | null
   score: number
   classe?: string | null
   provisional?: boolean
@@ -69,79 +44,57 @@ type Props = {
 
 export function AnalyseHeader({
   header,
+  clientLookup,
   score: _score,
   classe: _classe,
   provisional: _provisional,
   scoreStatus: _scoreStatus,
-  decisionEligibility,
+  decisionEligibility: _decisionEligibility,
   decisionBlockingReasons,
   onOpenEligibility,
-  decision,
-  decisionTime,
-  decisionBusy,
-  onDecision,
-  onClearDecision,
+  decision: _decision,
+  decisionTime: _decisionTime,
+  decisionBusy: _decisionBusy,
+  onDecision: _onDecision,
+  onClearDecision: _onClearDecision,
   copilotOpen,
   onToggleCopilot,
   tab,
   onTabChange,
 }: Props) {
-  const statusMeta = STATUS_META[header.status]
+  const subtitleItems = identityTags(header, clientLookup)
+  const lookupStatus = clientLookup ? LOOKUP_STATUS[clientLookup.status] || LOOKUP_STATUS.SKIPPED : null
+  const otherMatches = clientLookup ? clientLookup.matches.slice(1) : []
+  const lookupQuery = Object.entries(clientLookup?.query || {})
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' · ')
 
   return (
-    <div className="flex-none border-b border-wb-line bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F4] px-6 py-3">
-        <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-wb-faint">
-          <Link to="/" className="font-semibold text-wb-faint no-underline hover:text-slate-700">
+    <div className="flex-none">
+      <div className="relative mx-3 mt-3 overflow-hidden rounded-[24px] text-white" style={HERO_BACKGROUND}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-7 pt-5">
+        <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-white/60">
+          <Link to="/" className="font-medium text-white/60 no-underline hover:text-white">
             Tableau de bord
           </Link>
           <ChevronRight size={13} />
-          <Link to="/dossiers" className="font-semibold text-wb-faint no-underline hover:text-slate-700">
+          <Link to="/dossiers" className="font-medium text-white/60 no-underline hover:text-white">
             Dossiers
           </Link>
           <ChevronRight size={13} />
-          <span className="truncate font-bold text-slate-700">{header.id}</span>
-          <span
-            className="ml-2 inline-flex flex-none whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
-            style={{ color: statusMeta.color, background: statusMeta.bg }}
-          >
-            {header.statusLabel}
-          </span>
+          <span className="truncate font-semibold text-white">{header.id}</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {DECISIONS.map((d) => {
-            const Icon = d.icon
-            const active = decision === d.kind
-            return (
-              <button
-                key={d.kind}
-                type="button"
-                disabled={
-                  decisionBusy ||
-                  (d.kind === 'approve' && decisionEligibility?.eligible_for_approval === false) ||
-                  (d.kind === 'reserve' && decisionEligibility?.eligible_for_reserve === false)
-                }
-                onClick={() => (active ? onClearDecision() : onDecision(d.kind))}
-                className={[
-                  'inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border-0 px-3 py-1.5 text-[12px] font-bold transition-[filter,transform] duration-150 hover:-translate-y-px active:scale-[0.98] disabled:cursor-wait disabled:opacity-60',
-                  active ? d.activeClass : d.idleClass,
-                ].join(' ')}
-              >
-                <Icon size={13} strokeWidth={2.4} />
-                {d.label}
-              </button>
-            )
-          })}
           <button
             type="button"
             onClick={onToggleCopilot}
             aria-pressed={copilotOpen}
             className={[
-              'ml-1 inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-3 py-1.5 text-[12px] font-bold transition-colors',
+              'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12px] font-bold backdrop-blur-[2px] transition-colors',
               copilotOpen
-                ? 'border-transparent bg-wb-ink text-white'
-                : 'border-[#E2E5EA] bg-white text-slate-600 hover:bg-wb-surface',
+                ? 'border-wb-accent bg-wb-accent text-white'
+                : 'border-white/30 bg-white/10 text-white hover:bg-white/20',
             ].join(' ')}
           >
             <Bot size={14} strokeWidth={2} />
@@ -150,32 +103,63 @@ export function AnalyseHeader({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-5 px-6 py-3.5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-[12px] bg-gradient-to-br from-wb-ink to-wb-ink-soft text-[13px] font-extrabold text-wb-accent ring-1 ring-black/5">
+      <div className="flex flex-wrap items-end gap-5 px-7 pb-5 pt-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-wb-accent text-[13px] font-extrabold text-white">
             {header.shortCode}
           </span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="m-0 truncate text-[17px] font-extrabold tracking-tight text-slate-900">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="m-0 truncate text-[26px] font-medium leading-tight tracking-[0.01em] text-white">
                 {header.companyName}
               </h1>
-              {header.tiers ? (
-                <span className="rounded-full bg-[#EEF6FF] px-2 py-0.5 text-[10.5px] font-bold text-[#1D4ED8] ring-1 ring-[#BFDBFE]">
-                  Tiers {header.tiers}
+              {lookupStatus && (
+                <span
+                  className={`rounded-[8px] px-2 py-0.5 text-[11px] font-semibold ${lookupStatus.className}`}
+                  title={lookupQuery ? `Référentiel clients · requête : ${lookupQuery}` : 'Référentiel clients'}
+                >
+                  {lookupStatus.label}
                 </span>
-              ) : null}
+              )}
+              {otherMatches.length > 0 && (
+                <span
+                  className="rounded-[8px] bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-white/20"
+                  title={otherMatches
+                    .slice(0, 5)
+                    .map((m) => `${m.tiers || '—'} · ${m.raison_sociale || 'Sans raison sociale'}${m.ice ? ` · ICE ${m.ice}` : ''}`)
+                    .join('\n')}
+                >
+                  +{otherMatches.length} autre(s) correspondance(s)
+                </span>
+              )}
               {decisionBlockingReasons && decisionBlockingReasons.length > 0 ? (
-                <button type="button" onClick={onOpenEligibility} className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-800">
-                  {decisionBlockingReasons.length} vérification(s) manquante(s)
-                </button>
+                onOpenEligibility ? (
+                  <button type="button" onClick={onOpenEligibility} className="cursor-pointer rounded-[8px] border-0 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                    {decisionBlockingReasons.length} vérification(s) manquante(s)
+                  </button>
+                ) : (
+                  <span className="rounded-[8px] bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                    {decisionBlockingReasons.length} vérification(s) manquante(s)
+                  </span>
+                )
               ) : null}
             </div>
-            <p className="m-0 mt-0.5 truncate text-[12px] text-wb-muted">{header.subtitle}</p>
+            {subtitleItems.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {subtitleItems.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-[8px] bg-[rgba(250,250,250,0.95)] px-2 py-0.5 text-[11.5px] font-medium text-[#171717]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-none flex-wrap items-center gap-5">
+        <div className="flex flex-none flex-wrap items-center gap-6">
           <HeaderStat label="Montant financé" value={formatAmountMad(header.amountFinanced)} />
           <HeaderStat label="Durée" value={`${header.durationMonths} mois`} />
           <HeaderStat label="Apport" value={`${header.apportPct}%`} />
@@ -183,52 +167,43 @@ export function AnalyseHeader({
         </div>
       </div>
 
-      <AnimatePresence>
-        {decision && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.22 }}
-            className="overflow-hidden px-6"
-          >
-            <div
-              className="mb-3 flex items-center justify-between gap-3 rounded-[10px] px-3.5 py-2.5"
-              style={{ background: DECISION_TOAST[decision].bg }}
-            >
-              <div className="flex items-center gap-2">
-                {(() => {
-                  const ToastIcon = DECISION_TOAST[decision].icon
-                  return <ToastIcon size={15} style={{ color: DECISION_TOAST[decision].color }} />
-                })()}
-                <span className="text-[12.5px] font-bold" style={{ color: DECISION_TOAST[decision].color }}>
-                  {DECISION_TOAST[decision].text}
-                </span>
-                <span className="text-[11.5px] text-wb-faint">· {decisionTime}</span>
-              </div>
-              <button
-                type="button"
-                disabled={decisionBusy}
-                onClick={onClearDecision}
-                className="cursor-pointer border-0 bg-transparent text-[11.5px] font-semibold text-wb-faint hover:text-slate-700 disabled:cursor-wait disabled:opacity-60"
-              >
-                Annuler
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
 
       <AnalyseTabs tab={tab} onChange={onTabChange} />
     </div>
   )
 }
 
+/* Identifiants du client sous le nom : N° tiers d'abord, puis ICE, IF, RC, puis le reste
+   de la ligne du backend (secteur, activité, n° PVC). Les identifiants absents de cette
+   ligne sont complétés par le client retenu dans le référentiel ; inconnus, ils affichent « — ». */
+const IDENTIFIERS: Array<{ prefix: string; label: string; fromLookup: (m: IaClientMatch) => string | null | undefined }> = [
+  { prefix: 'Tiers', label: 'N° tiers', fromLookup: (m) => m.tiers },
+  { prefix: 'ICE', label: 'ICE', fromLookup: (m) => m.ice },
+  { prefix: 'IF', label: 'IF', fromLookup: (m) => m.identifiant_fiscal },
+  { prefix: 'RC', label: 'RC', fromLookup: (m) => m.rc },
+]
+
+function identityTags(header: AnalyseHeaderData, lookup?: ClientLookup | null): string[] {
+  const bits = (header.subtitle || '')
+    .split(' · ')
+    .map((item) => item.trim())
+    .filter((item) => item && item !== '—')
+  const primary = lookup?.primary
+  const identifiers = IDENTIFIERS.map(({ prefix, label, fromLookup }) => {
+    const fromLine = bits.find((bit) => bit.startsWith(`${prefix} `))?.slice(prefix.length + 1)
+    const fallback = prefix === 'Tiers' ? header.tiers : null
+    return `${label} ${fromLine || (primary && fromLookup(primary)) || fallback || '—'}`
+  })
+  const rest = bits.filter((bit) => !IDENTIFIERS.some(({ prefix }) => bit.startsWith(`${prefix} `)))
+  return [...identifiers, ...rest]
+}
+
 function HeaderStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="text-right">
-      <div className="text-[13px] font-bold tabular-nums text-slate-800">{value}</div>
-      <div className="text-[10.5px] uppercase tracking-[0.04em] text-wb-faint">{label}</div>
+      <div className="text-[15px] font-bold tabular-nums text-white">{value}</div>
+      <div className="mt-0.5 text-[11px] text-white/60">{label}</div>
     </div>
   )
 }

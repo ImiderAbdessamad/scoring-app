@@ -28,7 +28,7 @@ export function AppShell() {
   return (
     <CreateDossierProvider>
       <AnalyseJobsProvider>
-      <div className="flex h-full w-full overflow-hidden bg-wb-canvas">
+      <div className="flex h-full w-full overflow-hidden bg-wb-surface">
         <Sidebar
           open={sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}

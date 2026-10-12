@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from app.schemas.analyse import (
+    AccountingControlView,
+    CapitalAnalysis,
     DocumentSummary,
     ExtractionSummary,
+    FiscalAnalysis,
     ScoringAnalysisResult,
+    ScoringReadiness,
     YearsBlock,
 )
 from app.services.synthese_builder import build_synthese
@@ -102,3 +106,22 @@ def test_synthese_skips_irréprochable_without_bank_data():
     forts = " ".join(synthese["pointsForts"]).lower()
     assert "irréprochable" not in forts
     assert any("relevés bancaires" in p.lower() for p in synthese["pointsVigilance"])
+
+
+def test_synthese_keeps_technical_quality_out_of_vigilance():
+    result = _result()
+    result.readiness = ScoringReadiness(
+        blocking_reasons=["Chiffre d'affaires en conflit.", "Moins de 6 inputs de scoring utilisables."],
+    )
+    result.controls = [
+        AccountingControlView(code="bilan_equilibre", label="Équilibre actif / passif", status="failed"),
+    ]
+    result.fiscal_analysis = FiscalAnalysis(warnings=["low_ocr_confidence:resultat_fiscal"])
+    result.capital_analysis = CapitalAnalysis(warnings=["unparsed_cell:capital_social"])
+
+    vigi = " ".join(build_synthese(result)["pointsVigilance"])
+
+    for technical in ("en conflit", "inputs de scoring", "Contrôle comptable", "low_ocr_confidence", "unparsed_cell"):
+        assert technical not in vigi
+    assert "Rentabilité commerciale" in vigi
+    assert "78 jours" in vigi
