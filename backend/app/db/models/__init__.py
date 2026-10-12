@@ -11,6 +11,7 @@ from app.db.models.entities import (
     ScoringPolicyModel,
     SectorBenchmarkModel,
 )
+from app.db.models.rcc import RccAuditEventModel, RccDossierModel
 from app.db.models.sector_data import (
     SectorAnalysisSnapshotModel,
     SectorDataSourceModel,
@@ -30,6 +31,8 @@ __all__ = [
     "DossierModel",
     "IncidentAssessmentModel",
     "MemoModel",
+    "RccAuditEventModel",
+    "RccDossierModel",
     "ScoringPolicyModel",
     "SectorBenchmarkModel",
     "SectorAnalysisSnapshotModel",

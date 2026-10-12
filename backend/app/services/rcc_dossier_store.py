@@ -1,14 +1,22 @@
-"""Dossiers RCC en mémoire (poste local branché sur le pipeline scoring WFB)."""
+"""Dossiers RCC (poste branché sur le pipeline scoring WFB).
+
+Les dossiers sont gardés en mémoire pour la rapidité et enregistrés dans la base SQLite
+(tables rcc_dossiers / rcc_audit_events, voir rcc_persistence) : ils survivent aux
+redémarrages de l'API.
+"""
 from __future__ import annotations
 
+import logging
+import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from app.core.config import settings
-from app.schemas.analyse import RCC_ELEMENTS, SCORING_EXTRA_ELEMENTS
+from app.schemas.analyse import RCC_ELEMENTS, SCORING_EXTRA_ELEMENTS, ScoringAnalysisResult
+from app.services import rcc_persistence
 from app.services.ia_clients_service import resolve_tiers
 from app.services.rcc_projection import build_identite, clean_activite, export_rcc_clean, project_rcc_result
 
@@ -18,6 +26,8 @@ STATUS_LABELS = {
     "rejected": "Rejeté",
     "escalated": "Arbitrage demandé",
 }
+
+logger = logging.getLogger(__name__)
 
 FIELD_LABELS = {
     code: label for _, code, label, _ in (*RCC_ELEMENTS, *SCORING_EXTRA_ELEMENTS)
@@ -124,6 +134,37 @@ class RccDossier:
         return data
 
 
+_NOT_SERIALIZED = {"overrides", "scoring_result"}
+
+
+def dossier_to_payload(dossier: "RccDossier") -> dict[str, Any]:
+    """Dossier → dict JSON (résultat scoring complet inclus, pour l'export et l'envoi Ekip)."""
+    data = {f.name: getattr(dossier, f.name) for f in fields(dossier) if f.name not in _NOT_SERIALIZED}
+    data["overrides"] = [item.as_dict() for item in dossier.overrides]
+    scoring = dossier.scoring_result
+    data["scoring_result"] = scoring.model_dump(mode="json") if hasattr(scoring, "model_dump") else None
+    return data
+
+
+def dossier_from_payload(data: dict[str, Any]) -> "RccDossier":
+    scoring = None
+    if data.get("scoring_result"):
+        try:
+            scoring = ScoringAnalysisResult.model_validate(data["scoring_result"])
+        except Exception:
+            logger.warning("Résultat scoring illisible pour le dossier RCC %s.", data.get("id"))
+    known = {f.name for f in fields(RccDossier)} - _NOT_SERIALIZED
+    values = {key: value for key, value in data.items() if key in known}
+    return RccDossier(
+        **values,
+        overrides=[RccOverride(**item) for item in data.get("overrides") or []],
+        scoring_result=scoring,
+    )
+
+
+_SEQ_RE = re.compile(r"^RCC-\d{4}-(\d+)$")
+
+
 class RccDossierStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -131,8 +172,40 @@ class RccDossierStore:
         self._by_job: dict[str, str] = {}
         self._seq = 0
         self._audit: list[dict[str, Any]] = []
+        self._loaded = False
         self._pdf_dir = settings.files_dir / "rcc-pdfs"
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_loaded(self) -> None:
+        """Recharge, au premier accès, les dossiers et l'audit enregistrés en base."""
+        with self._lock:
+            if self._loaded:
+                return
+            self._loaded = True
+            dossiers, audit = rcc_persistence.load_all()
+            for data in dossiers:
+                try:
+                    dossier = dossier_from_payload(data)
+                except Exception:
+                    logger.exception("Dossier RCC illisible en base : %s", data.get("id"))
+                    continue
+                self._items[dossier.id] = dossier
+                if dossier.job_id:
+                    self._by_job[dossier.job_id] = dossier.id
+                match = _SEQ_RE.match(dossier.id)
+                if match:
+                    self._seq = max(self._seq, int(match.group(1)))
+            self._audit = audit + self._audit
+
+    def _persist(self, dossier: RccDossier) -> None:
+        rcc_persistence.save_dossier(dossier_to_payload(dossier))
+
+    def add_audit(self, event: dict[str, Any]) -> None:
+        """Ajoute un évènement à la piste d'audit (mémoire + base)."""
+        with self._lock:
+            self._ensure_loaded()
+            self._audit.append(event)
+            rcc_persistence.add_audit(event)
 
     def save_pdf(self, job_id: str, content: bytes) -> Path:
         path = self._pdf_dir / f"{job_id}.pdf"
@@ -140,19 +213,23 @@ class RccDossierStore:
         return path
 
     def find_by_job(self, job_id: str) -> RccDossier | None:
+        self._ensure_loaded()
         with self._lock:
             dossier_id = self._by_job.get(job_id)
             return self._items.get(dossier_id) if dossier_id else None
 
     def get(self, dossier_id: str) -> RccDossier | None:
+        self._ensure_loaded()
         with self._lock:
             return self._items.get(dossier_id)
 
     def put(self, dossier: RccDossier) -> RccDossier:
+        self._ensure_loaded()
         with self._lock:
             self._items[dossier.id] = dossier
             if dossier.job_id:
                 self._by_job[dossier.job_id] = dossier.id
+            self._persist(dossier)
             return dossier
 
     def _next_id(self) -> str:
@@ -205,7 +282,8 @@ class RccDossierStore:
             )
             self._items[dossier_id] = dossier
             self._by_job[job_id] = dossier_id
-            self._audit.append(
+            self._persist(dossier)
+            self.add_audit(
                 {
                     "kind": "event",
                     "timestamp": now,
@@ -229,6 +307,7 @@ class RccDossierStore:
         limit: int,
         offset: int,
     ) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
+        self._ensure_loaded()
         with self._lock:
             items = list(self._items.values())
         counts = {"pending": 0, "validated": 0, "rejected": 0, "escalated": 0, "all": len(items)}
@@ -260,6 +339,7 @@ class RccDossierStore:
         payload: dict[str, Any],
         actor: str,
     ) -> RccDossier | None:
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.get(dossier_id)
             if dossier is None:
@@ -273,8 +353,9 @@ class RccDossierStore:
                 dossier.decided_by = actor
                 dossier.decided_at = _now()
             dossier.updated_at = _now()
+            self._persist(dossier)
             if payload.get("status") and payload["status"] != before_status:
-                self._audit.append(
+                self.add_audit(
                     {
                         "kind": "event",
                         "timestamp": dossier.updated_at,
@@ -292,6 +373,7 @@ class RccDossierStore:
 
     def set_tiers(self, dossier_id: str, tiers: str, source: str, actor: str) -> RccDossier | None:
         """N° tiers choisi dans le référentiel (`selected`) ou saisi (`manual`), tracé dans l'audit."""
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.get(dossier_id)
             if dossier is None:
@@ -299,7 +381,8 @@ class RccDossierStore:
             before = resolve_tiers(dossier.identite)
             dossier.identite = {**dossier.identite, "tiers": tiers, "tiers_source": source}
             dossier.updated_at = _now()
-            self._audit.append(
+            self._persist(dossier)
+            self.add_audit(
                 {
                     "kind": "event",
                     "timestamp": dossier.updated_at,
@@ -317,6 +400,7 @@ class RccDossierStore:
 
     def set_identite(self, dossier_id: str, identite: dict[str, Any], action: str, actor: str) -> RccDossier | None:
         """Remplace l'identité (ex. référentiel clients relancé), tracé dans l'audit."""
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.get(dossier_id)
             if dossier is None:
@@ -324,7 +408,8 @@ class RccDossierStore:
             before = resolve_tiers(dossier.identite)
             dossier.identite = identite
             dossier.updated_at = _now()
-            self._audit.append(
+            self._persist(dossier)
+            self.add_audit(
                 {
                     "kind": "event",
                     "timestamp": dossier.updated_at,
@@ -341,12 +426,14 @@ class RccDossierStore:
             return dossier
 
     def mark_bilans_push(self, dossier_id: str, payload: dict[str, Any]) -> RccDossier | None:
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.get(dossier_id)
             if dossier is None:
                 return None
             dossier.bilans_push = payload
             dossier.updated_at = _now()
+            self._persist(dossier)
             return dossier
 
     def save_overrides(
@@ -355,6 +442,7 @@ class RccDossierStore:
         overrides: list[dict[str, Any]],
         actor: str,
     ) -> RccDossier | None:
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.get(dossier_id)
             if dossier is None:
@@ -374,7 +462,7 @@ class RccDossierStore:
                     verified=bool(raw.get("verified")),
                 )
                 by_code[code] = item
-                self._audit.append(
+                self.add_audit(
                     {
                         "kind": "correction",
                         "timestamp": now,
@@ -390,22 +478,27 @@ class RccDossierStore:
                 )
             dossier.overrides = list(by_code.values())
             dossier.updated_at = now
+            self._persist(dossier)
             return dossier
 
     def delete(self, dossier_id: str) -> bool:
+        self._ensure_loaded()
         with self._lock:
             dossier = self._items.pop(dossier_id, None)
             if dossier is None:
                 return False
             if dossier.job_id:
                 self._by_job.pop(dossier.job_id, None)
+            rcc_persistence.delete_dossier(dossier_id)
             return True
 
     def audit_all(self) -> list[dict[str, Any]]:
+        self._ensure_loaded()
         with self._lock:
             return list(reversed(self._audit))
 
     def audit_for(self, dossier_id: str) -> list[dict[str, Any]]:
+        self._ensure_loaded()
         with self._lock:
             return [item for item in reversed(self._audit) if item["dossier_id"] == dossier_id]
 

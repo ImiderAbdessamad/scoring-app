@@ -456,6 +456,7 @@ def attach_dossier(
         existing.ice = existing.ice or dossier.ice
         existing.exercice_date = existing.exercice_date or dossier.exercice_date
         existing.sector = existing.sector or dossier.sector
+        rcc_dossier_store.put(existing)  # enregistre la nouvelle extraction rattachée
         rcc_dossier_store.delete(dossier.id)
         return dossier_payload(existing)
     return dossier_payload(dossier)
@@ -552,7 +553,7 @@ def push_dossier_bilan(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     info = _record_bilans_push(dossier, status="sent", payload=payload, response=upstream)
-    rcc_dossier_store._audit.append(
+    rcc_dossier_store.add_audit(
         {
             "kind": "event",
             "timestamp": info["pushed_at"],
@@ -637,7 +638,7 @@ def push_dossiers_bilans_batch(
     actor = user.get("display_name") or user.get("username") or "analyste"
     for dossier, payload in prepared:
         info = _record_bilans_push(dossier, status="sent", payload=payload, response=upstream)
-        rcc_dossier_store._audit.append(
+        rcc_dossier_store.add_audit(
             {
                 "kind": "event",
                 "timestamp": info["pushed_at"],
