@@ -1,4 +1,4 @@
-<#
+﻿<#
   Publie backend/ et/ou frontend/ de scoring-app vers leurs dépôts GitLab.
 
   Chaque dossier est extrait avec son historique (git subtree split), puis
@@ -40,7 +40,8 @@ foreach ($name in $names) {
   $url = $Repos[$name]
   Write-Host "`n== $name -> $url" -ForegroundColor Cyan
 
-  if (Invoke-Git status --porcelain -- $name) {
+  # Fichiers suivis seulement : les dossiers locaux non versionnés (.claude, .venv…) ne comptent pas.
+  if (Invoke-Git status --porcelain --untracked-files=no -- $name) {
     Write-Warning "$name/ contient des modifications non commitées : elles ne seront pas publiées."
   }
 
