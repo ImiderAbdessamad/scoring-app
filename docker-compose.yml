@@ -143,8 +143,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: /api/v1
         VITE_USE_MOCK: "false"

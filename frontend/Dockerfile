@@ -1,14 +1,15 @@
+# Contexte de build : ce dossier (frontend/).
 FROM node:22-alpine AS build
 
 WORKDIR /src
 
-COPY frontend/package.json frontend/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./
-COPY frontend/vite.config.ts frontend/postcss.config.mjs frontend/index.html ./
-COPY frontend/src ./src
-COPY frontend/public ./public
+COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY vite.config.ts postcss.config.mjs index.html ./
+COPY src ./src
+COPY public ./public
 
 ARG VITE_API_BASE_URL=/api/v1
 ARG VITE_USE_MOCK=false
@@ -29,7 +30,7 @@ FROM nginx:1.27-alpine
 RUN apk add --no-cache wget \
     && rm -f /etc/nginx/conf.d/default.conf
 
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist /usr/share/nginx/html
 
 EXPOSE 80
