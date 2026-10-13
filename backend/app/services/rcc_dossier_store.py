@@ -172,6 +172,7 @@ class RccDossierStore:
         self._by_job: dict[str, str] = {}
         self._seq = 0
         self._audit: list[dict[str, Any]] = []
+        self._hidden_scoring: set[str] = set()
         self._loaded = False
         self._pdf_dir = settings.files_dir / "rcc-pdfs"
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -196,6 +197,7 @@ class RccDossierStore:
                 if match:
                     self._seq = max(self._seq, int(match.group(1)))
             self._audit = audit + self._audit
+            self._hidden_scoring |= rcc_persistence.load_hidden_scoring()
 
     def _persist(self, dossier: RccDossier) -> None:
         rcc_persistence.save_dossier(dossier_to_payload(dossier))
@@ -491,6 +493,35 @@ class RccDossierStore:
                 self._by_job.pop(dossier.job_id, None)
             rcc_persistence.delete_dossier(dossier_id)
             return True
+
+    def is_hidden_scoring(self, dossier_id: str) -> bool:
+        self._ensure_loaded()
+        with self._lock:
+            return dossier_id in self._hidden_scoring
+
+    def hide_scoring(self, dossier_id: str, client_name: str, actor: str) -> None:
+        """Masque un dossier Étude de risque dans RCC (le dossier scoring n'est pas touché)."""
+        self._ensure_loaded()
+        with self._lock:
+            if dossier_id in self._hidden_scoring:
+                return
+            now = _now()
+            self._hidden_scoring.add(dossier_id)
+            rcc_persistence.hide_scoring(dossier_id, actor, now)
+            self.add_audit(
+                {
+                    "kind": "event",
+                    "timestamp": now,
+                    "actor": actor,
+                    "dossier_id": dossier_id,
+                    "client_name": client_name,
+                    "field_code": None,
+                    "field_label": None,
+                    "before": None,
+                    "after": None,
+                    "action": "Masqué dans RCC (dossier Étude de risque)",
+                }
+            )
 
     def audit_all(self) -> list[dict[str, Any]]:
         self._ensure_loaded()

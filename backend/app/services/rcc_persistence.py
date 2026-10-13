@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
-from app.db.models.rcc import RccAuditEventModel, RccDossierModel
+from app.db.models.rcc import RccAuditEventModel, RccDossierModel, RccHiddenScoringModel
 from app.db.session import session_scope, sync_engine
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ def _ensure_tables() -> None:
         return
     RccDossierModel.__table__.create(bind=sync_engine, checkfirst=True)
     RccAuditEventModel.__table__.create(bind=sync_engine, checkfirst=True)
+    RccHiddenScoringModel.__table__.create(bind=sync_engine, checkfirst=True)
     _tables_ready = True
 
 
@@ -86,3 +87,24 @@ def add_audit(event: dict[str, Any]) -> None:
             session.commit()
     except Exception:
         logger.exception("Enregistrement de l'audit RCC impossible.")
+
+
+def load_hidden_scoring() -> set[str]:
+    try:
+        _ensure_tables()
+        with session_scope() as session:
+            return set(session.scalars(select(RccHiddenScoringModel.dossier_id)).all())
+    except Exception:
+        logger.exception("Chargement des dossiers masqués impossible.")
+        return set()
+
+
+def hide_scoring(dossier_id: str, actor: str, timestamp: str) -> None:
+    try:
+        _ensure_tables()
+        with session_scope() as session:
+            if session.get(RccHiddenScoringModel, dossier_id) is None:
+                session.add(RccHiddenScoringModel(dossier_id=dossier_id, hidden_by=actor, hidden_at=timestamp))
+                session.commit()
+    except Exception:
+        logger.exception("Masquage du dossier %s impossible.", dossier_id)

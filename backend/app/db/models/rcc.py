@@ -26,3 +26,13 @@ class RccAuditEventModel(Base):
     dossier_id: Mapped[str] = mapped_column(String(64), index=True)
     timestamp: Mapped[str] = mapped_column(String(40), default="")
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class RccHiddenScoringModel(Base):
+    """Dossiers Étude de risque (scoring) masqués dans la liste RCC ; ils restent intacts côté scoring."""
+
+    __tablename__ = "rcc_hidden_scoring"
+
+    dossier_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    hidden_by: Mapped[str] = mapped_column(String(128), default="")
+    hidden_at: Mapped[str] = mapped_column(String(40), default="")

@@ -246,13 +246,22 @@ def list_dossiers(
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    hide_scoring: bool = Query(default=False, description="Masquer tous les dossiers Étude de risque"),
 ) -> dict:
     local, _, _ = rcc_dossier_store.list_dossiers(
         status="all", search=None, limit=1000, offset=0
     )
-    merged = {item["id"]: item for item in scoring_list_summaries()}
+    merged = {} if hide_scoring else {item["id"]: item for item in scoring_list_summaries()}
     merged.update({item["id"]: item for item in local})
-    items = list(merged.values())
+    # Dossiers Étude de risque : masqués un par un, ou tous d'un coup.
+    items = [
+        item
+        for item in merged.values()
+        if not (
+            item.get("origin") == "scoring"
+            and (hide_scoring or rcc_dossier_store.is_hidden_scoring(item["id"]))
+        )
+    ]
     counts = {"pending": 0, "validated": 0, "rejected": 0, "escalated": 0, "all": len(items)}
     for item in items:
         if item.get("status") in counts:
@@ -333,9 +342,32 @@ def patch_dossier(
 
 @router.delete("/rcc/dossiers/{dossier_id}")
 def delete_dossier(dossier_id: str) -> dict:
+    if _is_scoring_dossier(dossier_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Dossier Étude de risque : il ne peut pas être supprimé depuis RCC. Utilisez « Masquer ».",
+        )
     if not rcc_dossier_store.delete(dossier_id):
         raise HTTPException(status_code=404, detail="Dossier introuvable.")
     return {"ok": True}
+
+
+def _is_scoring_dossier(dossier_id: str) -> bool:
+    from app.services import dossier_store
+
+    return dossier_store.get_by_id(dossier_id) is not None
+
+
+@router.post("/rcc/dossiers/{dossier_id}/hide")
+def hide_scoring_dossier(dossier_id: str, user: dict = Depends(get_current_user)) -> dict:
+    """Masque dans RCC un dossier venant d'Étude de risque ; il reste intact côté scoring."""
+    from app.services import dossier_store
+
+    record = dossier_store.get_by_id(dossier_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Seuls les dossiers Étude de risque peuvent être masqués.")
+    rcc_dossier_store.hide_scoring(dossier_id, record.name, user["display_name"])
+    return {"ok": True, "dossier_id": dossier_id}
 
 
 @router.put("/rcc/dossiers/{dossier_id}/overrides")
