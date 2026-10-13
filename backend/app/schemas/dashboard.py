@@ -9,7 +9,7 @@ class QueueItem(BaseModel):
     score: int
     urgency: str
     received: str
-    # Étape du dossier dans la file : "todo" (à analyser) ou "analyzing" (analyse en cours).
+    # Étape du dossier : "todo" (à analyser), "analyzing" (analyse en cours) ou "done" (analysé).
     stage: str = "todo"
     progressPct: int | None = None
 
@@ -67,6 +67,8 @@ class DashboardData(BaseModel):
     kpis: DashboardKpis
     queue: list[QueueItem]
     queueTotal: int
+    # Derniers dossiers analysés, pour compléter la file quand elle est courte.
+    recent: list[QueueItem] = []
     riskDist: list[RiskBucket]
     riskActiveTotal: int
     sectors: list[SectorStat]

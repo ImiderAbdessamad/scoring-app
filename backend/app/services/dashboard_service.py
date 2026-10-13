@@ -57,6 +57,8 @@ PRESET_SECTORS = {
     "Éducation",
 }
 QUEUE_LIMIT = 8
+# Au moins quelques dossiers récemment analysés sous la file, jamais plus que la place restante.
+RECENT_MIN = 3
 ALERT_LIMIT = 8
 
 
@@ -66,13 +68,15 @@ def get_dashboard() -> DashboardData:
     analyst = next((r.analyst for r in records if r.analyst), "Analyste")
     first = analyst.split()[0] if analyst else "Analyste"
     alerts = compute_alerts(records)
+    queue = compute_queue(waiting)
     return DashboardData(
         greeting=f"Bienvenue, {first}",
         dateLabel=date.today().strftime("%d/%m/%Y"),
         analystName=analyst,
         kpis=compute_kpis(records),
-        queue=compute_queue(waiting),
+        queue=queue,
         queueTotal=len(waiting),
+        recent=compute_recent(records, limit=max(RECENT_MIN, QUEUE_LIMIT - len(queue))),
         riskDist=compute_risk_dist(records),
         riskActiveTotal=sum(1 for r in records if r.status in OPEN_STATUSES),
         sectors=compute_sectors(records),
@@ -106,6 +110,25 @@ def compute_queue(waiting: list[StoredDossierRecord]) -> list[QueueItem]:
             progressPct=_progress_pct(record) if record.status == "analyzing" else None,
         )
         for record in ranked[:QUEUE_LIMIT]
+    ]
+
+
+def compute_recent(records: list[StoredDossierRecord], limit: int) -> list[QueueItem]:
+    """Derniers dossiers analysés (les plus récents d'abord ; à date égale, ordre de création)."""
+    done = [(index, r) for index, r in enumerate(records) if r.status not in QUEUE_STATUSES]
+    done.sort(key=lambda row: (_age_days(row[1]), row[0]))
+    return [
+        QueueItem(
+            id=record.id,
+            name=record.name,
+            sector=record.sector or "Autre",
+            amountShort=_amount_short(record.amount),
+            score=record.score,
+            urgency=(record.urgency or "normale").strip().lower() or "normale",
+            received=record.receivedLabel or _relative_label(record),
+            stage="done",
+        )
+        for _, record in done[:limit]
     ]
 
 

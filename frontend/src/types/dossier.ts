@@ -45,8 +45,8 @@ export interface QueueItem {
   score: number
   urgency: Urgency
   received: string
-  /** Étape dans la file : à analyser ou analyse en cours. */
-  stage?: 'todo' | 'analyzing'
+  /** Étape du dossier : à analyser, analyse en cours ou analysé. */
+  stage?: 'todo' | 'analyzing' | 'done'
   progressPct?: number | null
 }
 
@@ -103,6 +103,8 @@ export interface DashboardData {
   kpis: DashboardKpis
   queue: QueueItem[]
   queueTotal: number
+  /** Derniers dossiers analysés, affichés sous la file. */
+  recent?: QueueItem[]
   riskDist: RiskBucket[]
   riskActiveTotal: number
   sectors: SectorStat[]

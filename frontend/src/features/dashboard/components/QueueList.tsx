@@ -9,9 +9,10 @@ import type { QueueItem } from '@/types/dossier'
 type Props = {
   items: QueueItem[]
   total: number
+  recent: QueueItem[]
 }
 
-export function QueueList({ items, total }: Props) {
+export function QueueList({ items, total, recent }: Props) {
   return (
     <Card delay={0.28} className="p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -35,54 +36,73 @@ export function QueueList({ items, total }: Props) {
 
       <ul className="m-0 list-none p-0">
         {items.length === 0 && (
-          <li className="px-1 py-8 text-center text-[13px] text-wb-muted">
+          <li className="px-1 pb-2 pt-1 text-[13px] text-wb-muted">
             Aucun dossier à analyser ni en cours d’analyse.
           </li>
         )}
         {items.map((qi, i) => (
-          <motion.li
-            key={qi.id}
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.32 + i * 0.05, duration: 0.3 }}
-            className="group flex items-center gap-3.5 border-b border-wb-line py-3.5 last:border-b-0"
-          >
-            <span
-              className="h-2 w-2 flex-none rounded-full"
-              style={{
-                background: qi.urgency === 'haute' ? '#FF9B26' : '#94A3B8',
-              }}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-bold text-[#1C1B1B]">
-                {qi.name}
-              </div>
-              <div className="mt-0.5 flex flex-wrap gap-2 text-[10.5px] text-wb-faint">
-                <span className="font-mono">{qi.id}</span>
-                <span>{qi.sector}</span>
-                <span>{qi.received}</span>
-              </div>
-            </div>
-            <StageTag stage={qi.stage ?? 'todo'} progressPct={qi.progressPct} />
-            <div className="font-sans text-[13px] font-bold tabular-nums text-slate-700">
-              {qi.amountShort}
-            </div>
-            <Link to={`/analyse/${qi.id}`}>
-              <Button variant="soft" className="pr-1.5 group-hover:border-wb-accent">
-                Analyser
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-wb-accent text-white">
-                  <ChevronRight size={14} strokeWidth={2.4} />
-                </span>
-              </Button>
-            </Link>
-          </motion.li>
+          <QueueRow key={qi.id} item={qi} index={i} />
         ))}
       </ul>
+
+      {recent.length > 0 && (
+        <>
+          <div className="mb-1 mt-5 text-[11px] font-bold uppercase tracking-[0.08em] text-wb-faint">
+            Récemment analysés
+          </div>
+          <ul className="m-0 list-none p-0">
+            {recent.map((qi, i) => (
+              <QueueRow key={qi.id} item={qi} index={items.length + i} />
+            ))}
+          </ul>
+        </>
+      )}
     </Card>
   )
 }
 
-function StageTag({ stage, progressPct }: { stage: 'todo' | 'analyzing'; progressPct?: number | null }) {
+function QueueRow({ item: qi, index }: { item: QueueItem; index: number }) {
+  const done = qi.stage === 'done'
+  return (
+    <motion.li
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: 0.32 + index * 0.05, duration: 0.3 }}
+      className="group flex items-center gap-3.5 border-b border-wb-line py-3.5 last:border-b-0"
+    >
+      <span
+        className="h-2 w-2 flex-none rounded-full"
+        style={{
+          background: done ? '#16A34A' : qi.urgency === 'haute' ? '#FF9B26' : '#94A3B8',
+        }}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[14px] font-bold text-[#1C1B1B]">
+          {qi.name}
+        </div>
+        <div className="mt-0.5 flex flex-wrap gap-2 text-[10.5px] text-wb-faint">
+          <span className="font-mono">{qi.id}</span>
+          <span>{qi.sector}</span>
+          <span>{qi.received}</span>
+        </div>
+      </div>
+      <StageTag stage={qi.stage ?? 'todo'} progressPct={qi.progressPct} />
+      <div className="font-sans text-[13px] font-bold tabular-nums text-slate-700">
+        {qi.amountShort}
+      </div>
+      <Link to={`/analyse/${qi.id}`}>
+        <Button variant="soft" className="pr-1.5 group-hover:border-wb-accent">
+          {done ? 'Voir' : 'Analyser'}
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-wb-accent text-white">
+            <ChevronRight size={14} strokeWidth={2.4} />
+          </span>
+        </Button>
+      </Link>
+    </motion.li>
+  )
+}
+
+function StageTag({ stage, progressPct }: { stage: 'todo' | 'analyzing' | 'done'; progressPct?: number | null }) {
   const meta = STAGE_META[stage]
   return (
     <span

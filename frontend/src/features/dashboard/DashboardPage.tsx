@@ -82,7 +82,7 @@ export function DashboardPage() {
         {data && (
           <>
             <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-[1fr_360px]">
-              <QueueList items={data.queue} total={data.queueTotal} />
+              <QueueList items={data.queue} total={data.queueTotal} recent={data.recent ?? []} />
               <DashboardSidePanels
                 riskDist={data.riskDist}
                 riskActiveTotal={data.riskActiveTotal}

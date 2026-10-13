@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.schemas.create_dossier import StoredDossierRecord
-from app.services.dashboard_service import QUEUE_STATUSES, compute_queue
+from app.services.dashboard_service import QUEUE_STATUSES, compute_queue, compute_recent
 
 
 def _record(dossier_id: str, status: str, urgency: str = "normale") -> StoredDossierRecord:
@@ -37,3 +37,18 @@ def test_analyses_in_progress_come_first_then_urgent():
         _record("C", "analyzing"),
     ])
     assert [item.id for item in queue] == ["C", "B", "A"]
+
+
+def test_recent_lists_analysed_dossiers_only_newest_first():
+    records = [
+        _record("A", "pending"),
+        _record("B", "review"),
+        _record("C", "approved"),
+        _record("D", "analyzing"),
+    ]
+    records[1].date = "01/09/2026"  # plus ancien que C
+    recent = compute_recent(records, limit=5)
+
+    assert [item.id for item in recent] == ["C", "B"]
+    assert {item.stage for item in recent} == {"done"}
+    assert len(compute_recent(records, limit=1)) == 1
