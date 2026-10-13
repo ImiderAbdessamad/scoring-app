@@ -105,6 +105,21 @@ export function gradeOf(score: number, classe?: string | null): GradeInfo {
   return classTone(classe)
 }
 
+/** Statut affiché d'un dossier : uniquement l'avancement de l'analyse (jamais la décision). */
+export type DossierStage = 'todo' | 'analyzing' | 'done'
+
+export function dossierStage(status: DossierStatus): DossierStage {
+  if (status === 'pending' || status === 'ready') return 'todo'
+  if (status === 'analyzing') return 'analyzing'
+  return 'done'
+}
+
+export const STAGE_META: Record<DossierStage, { label: string; filterLabel: string; color: string; bg: string }> = {
+  todo: { label: 'À analyser', filterLabel: 'À analyser', color: '#475569', bg: '#F1F5F9' },
+  analyzing: { label: 'En analyse', filterLabel: 'En analyse', color: '#B45309', bg: '#FFF7ED' },
+  done: { label: 'Analysé', filterLabel: 'Analysés', color: '#15803D', bg: '#ECFDF5' },
+}
+
 export const STATUS_META: Record<
   DossierStatus,
   { label: string; color: string; bg: string }

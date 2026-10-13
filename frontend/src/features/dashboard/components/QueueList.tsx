@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { STAGE_META } from '@/lib/format'
 import type { QueueItem } from '@/types/dossier'
 
 type Props = {
@@ -16,12 +17,12 @@ export function QueueList({ items, total }: Props) {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <div className="text-[18px] font-semibold text-[#1C1B1B]">
-            File d&apos;attente · Prêts à analyser
+            File d&apos;attente · À analyser et en cours
           </div>
           <div className="mt-1 text-[12.5px] text-wb-muted">
             {total === 0
-              ? 'Aucun dossier en file pour le moment'
-              : `${total} dossier(s) en attente, triés par urgence`}
+              ? 'Tous les dossiers sont analysés'
+              : `${total} dossier(s) · analyses en cours d’abord, puis par urgence`}
           </div>
         </div>
         <Link
@@ -35,7 +36,7 @@ export function QueueList({ items, total }: Props) {
       <ul className="m-0 list-none p-0">
         {items.length === 0 && (
           <li className="px-1 py-8 text-center text-[13px] text-wb-muted">
-            Créez un dossier pour le voir apparaître ici.
+            Aucun dossier à analyser ni en cours d’analyse.
           </li>
         )}
         {items.map((qi, i) => (
@@ -62,6 +63,7 @@ export function QueueList({ items, total }: Props) {
                 <span>{qi.received}</span>
               </div>
             </div>
+            <StageTag stage={qi.stage ?? 'todo'} progressPct={qi.progressPct} />
             <div className="font-sans text-[13px] font-bold tabular-nums text-slate-700">
               {qi.amountShort}
             </div>
@@ -77,5 +79,18 @@ export function QueueList({ items, total }: Props) {
         ))}
       </ul>
     </Card>
+  )
+}
+
+function StageTag({ stage, progressPct }: { stage: 'todo' | 'analyzing'; progressPct?: number | null }) {
+  const meta = STAGE_META[stage]
+  return (
+    <span
+      className="hidden flex-none whitespace-nowrap rounded-[8px] px-2 py-0.5 text-[11.5px] font-semibold tabular-nums sm:inline-flex"
+      style={{ color: meta.color, background: meta.bg }}
+    >
+      {meta.label}
+      {stage === 'analyzing' && typeof progressPct === 'number' ? ` · ${progressPct} %` : ''}
+    </span>
   )
 }

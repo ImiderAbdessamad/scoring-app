@@ -38,6 +38,8 @@ OPEN_STATUSES = {
     "contracting",
 }
 TO_ANALYZE_STATUSES = {"pending", "ready"}
+# File d'attente du tableau de bord : dossiers à analyser et analyses en cours.
+QUEUE_STATUSES = TO_ANALYZE_STATUSES | {"analyzing"}
 DECIDED_STATUSES = {"approved", "rejected", "reserved"}
 SECTOR_ORDER = ("Transport", "BTP", "Commerce", "Santé", "Industrie", "Autres")
 PRESET_SECTORS = {
@@ -60,7 +62,7 @@ ALERT_LIMIT = 8
 
 def get_dashboard() -> DashboardData:
     records = dossier_store.list_created()
-    waiting = [r for r in records if r.status in TO_ANALYZE_STATUSES]
+    waiting = [r for r in records if r.status in QUEUE_STATUSES]
     analyst = next((r.analyst for r in records if r.analyst), "Analyste")
     first = analyst.split()[0] if analyst else "Analyste"
     alerts = compute_alerts(records)
@@ -81,9 +83,11 @@ def get_dashboard() -> DashboardData:
 
 
 def compute_queue(waiting: list[StoredDossierRecord]) -> list[QueueItem]:
+    # Analyses en cours d'abord, puis les urgents, puis les plus anciens.
     ranked = sorted(
         waiting,
         key=lambda r: (
+            0 if r.status == "analyzing" else 1,
             0 if (r.urgency or "").strip().lower() == "haute" else 1,
             _age_days(r),
             r.id,
@@ -98,9 +102,24 @@ def compute_queue(waiting: list[StoredDossierRecord]) -> list[QueueItem]:
             score=record.score,
             urgency=(record.urgency or "normale").strip().lower() or "normale",
             received=record.receivedLabel or _relative_label(record),
+            stage="analyzing" if record.status == "analyzing" else "todo",
+            progressPct=_progress_pct(record) if record.status == "analyzing" else None,
         )
         for record in ranked[:QUEUE_LIMIT]
     ]
+
+
+def _progress_pct(record: StoredDossierRecord) -> int | None:
+    """Progression de l'analyse en cours (None si le job n'est pas retrouvé)."""
+    try:
+        from app.services.analyse_job_store import job_store
+
+        job = job_store.get_for_dossier(record.id)
+    except Exception:
+        return None
+    if job is None or job.status not in {"queued", "processing"}:
+        return None
+    return int(job.progress_pct or 0)
 
 
 def compute_alerts(records: list[StoredDossierRecord]) -> list[AlertItem]:

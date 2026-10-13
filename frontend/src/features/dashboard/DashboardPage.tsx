@@ -38,15 +38,17 @@ export function DashboardPage() {
     }
   }, [storeTick])
 
+  // Rafraîchissement pendant une analyse : lancée depuis ce navigateur, ou visible dans la file (import, partenaire).
+  const analysing = running || Boolean(data?.queue.some((item) => item.stage === 'analyzing'))
   useEffect(() => {
-    if (USE_MOCK || !running) return
+    if (USE_MOCK || !analysing) return
     const t = window.setInterval(() => {
       fetchDashboard()
         .then(setData)
         .catch(() => undefined)
     }, 4000)
     return () => window.clearInterval(t)
-  }, [running])
+  }, [analysing])
 
   return (
     <div className="flex h-full min-h-0 flex-col">

@@ -9,6 +9,9 @@ class QueueItem(BaseModel):
     score: int
     urgency: str
     received: str
+    # Étape du dossier dans la file : "todo" (à analyser) ou "analyzing" (analyse en cours).
+    stage: str = "todo"
+    progressPct: int | None = None
 
 
 class RiskBucket(BaseModel):

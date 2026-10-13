@@ -45,6 +45,9 @@ export interface QueueItem {
   score: number
   urgency: Urgency
   received: string
+  /** Étape dans la file : à analyser ou analyse en cours. */
+  stage?: 'todo' | 'analyzing'
+  progressPct?: number | null
 }
 
 export type RiskBucket = {

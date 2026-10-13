@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { PageHero } from '@/components/layout/PageHero'
 import { Card } from '@/components/ui/Card'
 import { USE_MOCK } from '@/config/env'
-import { dateFromDaysAgo, formatAmountMad } from '@/lib/format'
+import { STAGE_META, dateFromDaysAgo, dossierStage, formatAmountMad, type DossierStage } from '@/lib/format'
 import { displaySector } from '@/lib/sector'
 import { useCreateDossier } from '@/features/dossiers/create/CreateDossierProvider'
 import { fetchDossiers } from '@/services/api/dossiers'
@@ -18,11 +18,16 @@ import type { Dossier } from '@/types/dossier'
 
 const PAGE_SIZE = 8
 
+const STAGE_FILTERS: Array<DossierStage | 'all'> = ['all', 'todo', 'analyzing', 'done']
+
 export function DossiersPage() {
   const { openCreateDossier } = useCreateDossier()
   const { jobs } = useAnalyseJobs()
   const [params, setParams] = useSearchParams()
   const statusParam = 'all' as const
+  // Filtre sur l'avancement de l'analyse (jamais sur la décision).
+  const rawStage = params.get('etape')
+  const stageFilter: DossierStage | 'all' = STAGE_FILTERS.includes(rawStage as DossierStage) ? (rawStage as DossierStage) : 'all'
   const pageParam = Math.max(1, Number(params.get('page') ?? '1') || 1)
 
   const [queryInput, setQueryInput] = useState(params.get('q') ?? '')
@@ -68,7 +73,10 @@ export function DossiersPage() {
     }
   }, [statusParam, query, storeTick])
 
-  const running = Object.values(jobs).some((j) => j.status === 'queued' || j.status === 'processing')
+  // Rafraîchissement pendant une analyse : lancée ici, ou arrivée par import / partenaire.
+  const running =
+    Object.values(jobs).some((j) => j.status === 'queued' || j.status === 'processing') ||
+    items.some((d) => d.status === 'analyzing')
   useEffect(() => {
     if (USE_MOCK || !running) return
     const t = window.setInterval(() => {
@@ -87,11 +95,24 @@ export function DossiersPage() {
     return d
   })
 
-  const totalPages = Math.max(1, Math.ceil(decoratedItems.length / PAGE_SIZE))
+  const stageCounts: Record<DossierStage | 'all', number> = { all: decoratedItems.length, todo: 0, analyzing: 0, done: 0 }
+  for (const d of decoratedItems) stageCounts[dossierStage(d.status)] += 1
+  const visibleItems =
+    stageFilter === 'all' ? decoratedItems : decoratedItems.filter((d) => dossierStage(d.status) === stageFilter)
+
+  const totalPages = Math.max(1, Math.ceil(visibleItems.length / PAGE_SIZE))
   const page = Math.min(pageParam, totalPages)
-  const pageItems = decoratedItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const from = decoratedItems.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-  const to = Math.min(page * PAGE_SIZE, decoratedItems.length)
+  const pageItems = visibleItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const from = visibleItems.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const to = Math.min(page * PAGE_SIZE, visibleItems.length)
+
+  function setStage(next: DossierStage | 'all') {
+    const nextParams = new URLSearchParams(params)
+    if (next === 'all') nextParams.delete('etape')
+    else nextParams.set('etape', next)
+    nextParams.delete('page')
+    setParams(nextParams)
+  }
 
 
   function goToPage(p: number) {
@@ -118,9 +139,9 @@ export function DossiersPage() {
         subtitle={
           loading
             ? 'Chargement…'
-            : items.length === 0
+            : visibleItems.length === 0
               ? 'Aucun dossier'
-              : `${items.length} dossier(s) · affichage ${from}–${to}`
+              : `${visibleItems.length} dossier(s) · affichage ${from}–${to}`
         }
         actions={
           <>
@@ -152,22 +173,52 @@ export function DossiersPage() {
       />
 
       <div className="wb-scroll flex-1 overflow-y-auto px-6 py-6 pb-10">
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Filtrer par avancement">
+          {STAGE_FILTERS.map((key) => {
+            const active = stageFilter === key
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setStage(key)}
+                className={[
+                  'inline-flex flex-none cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border-0 px-4 py-2 text-[13px] font-semibold transition-colors',
+                  active ? 'bg-wb-ink text-white' : 'bg-white text-slate-600 ring-1 ring-wb-line hover:bg-wb-surface',
+                ].join(' ')}
+              >
+                {key === 'all' ? 'Tous' : STAGE_META[key].filterLabel}
+                <span
+                  className={[
+                    'inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums',
+                    active ? 'bg-wb-accent text-white' : 'bg-wb-surface text-wb-muted',
+                  ].join(' ')}
+                >
+                  {stageCounts[key]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
         <Card delay={0.1} className="overflow-hidden">
           <div className="wb-scroll overflow-x-auto">
-            <div className="min-w-[960px]">
-              <div className="grid grid-cols-[140px_1fr_140px_120px_70px_120px_96px_40px] gap-2 border-b border-wb-line bg-[#F8FAFC] px-5 py-3 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-muted">
+            <div className="min-w-[1080px]">
+              <div className="grid grid-cols-[140px_1fr_130px_120px_70px_130px_110px_96px_40px] gap-2 border-b border-wb-line bg-[#F8FAFC] px-5 py-3 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-muted">
                 <div>Référence</div>
                 <div>Entreprise</div>
                 <div>Secteur</div>
                 <div>Montant</div>
                 <div>Durée</div>
+                <div>Statut</div>
                 <div>Analyste</div>
                 <div>Reçu</div>
                 <div />
               </div>
 
               <AnimatePresence mode="popLayout">
-                {!loading && items.length === 0 && (
+                {!loading && visibleItems.length === 0 && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -177,7 +228,7 @@ export function DossiersPage() {
                       Aucun dossier trouvé
                     </div>
                     <div className="mt-1 text-[12.5px] text-wb-faint">
-                      Modifiez votre recherche ou les filtres.
+                      Modifiez votre recherche ou le filtre.
                     </div>
                   </motion.div>
                 )}
@@ -193,7 +244,7 @@ export function DossiersPage() {
                   >
                     <Link
                       to={`/analyse/${d.id}`}
-                      className="grid grid-cols-[140px_1fr_140px_120px_70px_120px_96px_40px] group items-center gap-2 border-b border-wb-line px-5 py-4 text-[13px] no-underline transition-colors hover:bg-wb-accent-soft/40 last:border-b-0"
+                      className="grid grid-cols-[140px_1fr_130px_120px_70px_130px_110px_96px_40px] group items-center gap-2 border-b border-wb-line px-5 py-4 text-[13px] no-underline transition-colors hover:bg-wb-accent-soft/40 last:border-b-0"
                     >
                       <div>
                         <div className="font-mono text-[12.5px] font-bold text-wb-accent-text">
@@ -211,6 +262,9 @@ export function DossiersPage() {
                         {formatAmountMad(d.amount)}
                       </div>
                       <div className="tabular-nums text-wb-muted">{d.duration}m</div>
+                      <div>
+                        <StageBadge stage={dossierStage(d.status)} progressPct={d.analyseProgressPct} />
+                      </div>
                       <div className="text-wb-muted">{d.analyst}</div>
                       <div className="tabular-nums text-wb-faint">
                         {d.date || dateFromDaysAgo(d.receivedDaysAgo)}
@@ -238,7 +292,7 @@ export function DossiersPage() {
             </div>
           </div>
 
-          {!loading && items.length > 0 && (
+          {!loading && visibleItems.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-wb-line px-5 py-3.5">
               <div className="text-[12px] text-wb-muted">
                 Page <span className="font-semibold text-slate-800">{page}</span> /{' '}
@@ -284,5 +338,18 @@ export function DossiersPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+function StageBadge({ stage, progressPct }: { stage: DossierStage; progressPct?: number | null }) {
+  const meta = STAGE_META[stage]
+  return (
+    <span
+      className="inline-flex whitespace-nowrap rounded-[8px] px-2 py-0.5 text-[11.5px] font-semibold tabular-nums"
+      style={{ color: meta.color, background: meta.bg }}
+    >
+      {meta.label}
+      {stage === 'analyzing' && typeof progressPct === 'number' ? ` · ${progressPct} %` : ''}
+    </span>
   )
 }
