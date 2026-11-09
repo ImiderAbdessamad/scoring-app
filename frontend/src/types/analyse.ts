@@ -186,6 +186,8 @@ export interface RatioItem {
   formula: string
   threshold?: string
   value: string
+  n1?: string | null
+  variation?: number | null
   status: RatioStatus
   barPct: number
   interpretation: string

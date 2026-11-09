@@ -12,7 +12,6 @@ const TABS: TabDef[] = [
   { id: 'synthese', label: 'Vue générale' },
   { id: 'etats', label: 'États financiers' },
   { id: 'ratios', label: 'Ratios' },
-  { id: 'fiscal', label: 'Analyse fiscale' },
   { id: 'capital', label: 'Capital' },
   // Onglet masqué pour l'instant — réactivable en décommentant (voir aussi AnalysePage.tsx).
   // { id: 'qualite', label: 'Préparation à la décision' },

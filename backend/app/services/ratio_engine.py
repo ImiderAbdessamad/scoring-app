@@ -107,6 +107,16 @@ def capacite_remboursement(dettes_fin: Decimal | None, caf: Decimal | None) -> R
 
 # --- 1.2 Rentabilité et autofinancement ---
 
+def montant_bilan(value: Decimal | float | None, *, negative_bad: bool) -> RatioResult:
+    """Montant capté du bilan, affiché comme indicateur (pas un ratio noté)."""
+    if value is None:
+        return _result(None, "Non calculable", reason="Donnée manquante.", validity_status="missing")
+    amount = float(value)
+    if negative_bad and amount < 0:
+        return _result(amount, "Non conforme", reason="Montant négatif.", numerator=amount, validity_status="economically_invalid")
+    return _result(amount, "Conforme", numerator=amount)
+
+
 def capacite_autofinancement_ca(caf: Decimal | None, ca: Decimal | None) -> RatioResult:
     if caf is None or ca is None:
         return _result(None, "Non calculable", reason="Donnée manquante.", numerator=caf, denominator=ca, validity_status="missing")
@@ -284,10 +294,13 @@ RATIO_METADATA: Dict[str, dict] = {
     "autonomie_financiere": {"label": "Autonomie financière", "formula": "FP ÷ Total Bilan", "threshold": "≥ 20 %", "unit": "%"},
     "ratio_endettement": {"label": "Ratio d'endettement", "formula": "Endettement à terme ÷ FP", "threshold": "≤ 1,5x (indic. — conforme jusqu'à 2,0x)", "unit": "x"},
     "capacite_remboursement": {"label": "Capacité de remboursement", "formula": "Dettes de fin. ÷ CAF", "threshold": "≤ 3 ans (indic. — conforme jusqu'à 5 ans)", "unit": "ans"},
-    "caf_sur_ca": {"label": "Capacité d'autofinancement", "formula": "CAF ÷ CA", "threshold": "≥ 5 %", "unit": "%"},
+    "caf_montant": {"label": "Capacité d'autofinancement", "formula": "Montant capté du bilan", "threshold": "", "unit": "MAD"},
+    "caf_sur_ca": {"label": "Capacité d'autofinancement / CA", "formula": "CAF ÷ CA", "threshold": "≥ 5 %", "unit": "%"},
     "rentabilite_commerciale": {"label": "Rentabilité commerciale", "formula": "RN ÷ CA", "threshold": "≥ 5 %", "unit": "%"},
     "rentabilite_financiere": {"label": "Rentabilité financière", "formula": "RN ÷ FP", "threshold": "> 10 %", "unit": "%"},
     "rentabilite_economique": {"label": "Rentabilité économique", "formula": "RN ÷ (FP + Dettes fin.)", "threshold": "> coût moyen dette (5 %)", "unit": "%"},
+    "fonds_de_roulement": {"label": "Fonds de roulement", "formula": "(Fonds propres + dettes MLT) − actifs immobilisés", "threshold": "≥ 0", "unit": "MAD"},
+    "besoin_en_fonds_roulement": {"label": "Besoin en fonds de roulement", "formula": "Actif circulant − passif circulant", "threshold": "", "unit": "MAD"},
     "fdr_sur_ca": {"label": "FDR / CA", "formula": "Fonds de roulement ÷ CA", "threshold": "> 0 %", "unit": "%"},
     "tresorerie_jours_ca": {"label": "Trésorerie en jours de CA", "formula": "Trésorerie nette ÷ CA × 360", "threshold": "> 0 jour", "unit": "j"},
     "delais_clients": {"label": "Délais clients", "formula": "(Clients ÷ CA) × 360", "threshold": "≤ 60 j (à surveiller ≤ 90 j)", "unit": "j"},
@@ -330,12 +343,15 @@ def calculate_all_ratios(data: dict) -> Dict[str, RatioResult]:
             data.get("dettes_financement") if data.get("dettes_financement") is not None else data.get("dettes_financieres"),
             data.get("caf"),
         ),
+        "caf_montant": montant_bilan(data.get("caf"), negative_bad=True),
         "caf_sur_ca": capacite_autofinancement_ca(data.get("caf"), data.get("chiffre_affaires")),
         "rentabilite_commerciale": rentabilite_commerciale(data.get("resultat_net"), data.get("chiffre_affaires")),
         "rentabilite_financiere": rentabilite_financiere(data.get("resultat_net"), data.get("fonds_propres")),
         "rentabilite_economique": rentabilite_economique(
             data.get("resultat_net"), data.get("fonds_propres"), data.get("dettes_financieres")
         ),
+        "fonds_de_roulement": montant_bilan(data.get("fdr"), negative_bad=True),
+        "besoin_en_fonds_roulement": montant_bilan(data.get("bfr"), negative_bad=False),
         "fdr_sur_ca": fdr_ca(data.get("fdr"), data.get("chiffre_affaires")),
         "tresorerie_jours_ca": tresorerie_jours_ca(data.get("tresorerie_nette"), data.get("chiffre_affaires")),
         "delais_clients": clients_res,

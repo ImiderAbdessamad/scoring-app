@@ -7,7 +7,7 @@ from typing import Any
 
 from app.schemas.analyse import ScoringAnalysisResult
 from app.schemas.create_dossier import StoredDossierRecord
-from app.services.ratio_engine import RATIO_METADATA
+from app.services.ratio_engine import RATIO_METADATA, calculate_all_ratios, montant_bilan
 from app.services.scoring_engine import (
     AXE1_PENALTY_NON_CONFORME,
     AXE1_PENALTY_SURVEILLER,
@@ -284,6 +284,8 @@ def _fmt_ratio(key: str, value: float | None) -> str:
         return "—"
     if unit == "%":
         return _pct(value)
+    if unit == "MAD":
+        return _kdh(value)
     if unit == "x":
         return f"{value:.2f}".replace(".", ",") + "x"
     if unit in {"j", "ans"}:
@@ -301,6 +303,58 @@ def _bar_pct(key: str, value: float | None, status: str) -> int:
     if status == "Non conforme":
         return 22
     return 12
+
+
+def _series_at(series: dict[str, list[Any]], key: str, index: int) -> float | None:
+    values = series.get(key) or []
+    if index >= len(values) or values[index] is None:
+        return None
+    return float(values[index])
+
+
+def _n1_ratio_inputs(result: ScoringAnalysisResult) -> dict[str, Any]:
+    series = result.years.series or {}
+    by_code = {item.code: item for item in result.fields}
+    from app.domain.period_math import safe_sum_period_fields
+    from app.schemas.analyse import PeriodFieldValue
+
+    achats_rev = by_code.get("ACHATS_REVENDUS")
+    achats_con = by_code.get("ACHATS_CONSOMMES")
+    achats_sum = safe_sum_period_fields(
+        [
+            achats_rev.previous if achats_rev and achats_rev.previous else PeriodFieldValue(status="missing"),
+            achats_con.previous if achats_con and achats_con.previous else PeriodFieldValue(status="missing"),
+        ]
+    )
+    achats = achats_sum.usable_value if achats_sum.usable else None
+    return {
+        "fonds_propres": _series_at(series, "fonds_propres", 1),
+        "total_bilan": _series_at(series, "total_bilan", 1),
+        "chiffre_affaires": _series_at(series, "chiffre_affaires", 1),
+        "resultat_net": _series_at(series, "resultat_net", 1),
+        "dettes_financieres": _series_at(series, "dettes_financieres", 1),
+        "dettes_financement": _series_at(series, "endettement_terme", 1) or _series_at(series, "dettes_financieres", 1),
+        "caf": _series_at(series, "caf", 1),
+        "fdr": _series_at(series, "fdr", 1),
+        "bfr": _series_at(series, "bfr", 1),
+        "tresorerie_nette": _series_at(series, "tresorerie_nette", 1),
+        "clients": _series_at(series, "clients", 1),
+        "fournisseurs": _series_at(series, "fournisseurs", 1),
+        "achats": achats,
+        "stocks": _series_at(series, "stocks", 1),
+        "ca_n1": None,
+    }
+
+
+def _ratios_n1(result: ScoringAnalysisResult) -> dict[str, Any]:
+    payload = {key: _dec_opt(value) for key, value in _n1_ratio_inputs(result).items()}
+    return calculate_all_ratios(payload)
+
+
+def _variation(n: float | None, n1: float | None) -> float | None:
+    if n is None or n1 in (None, 0):
+        return None
+    return (n - n1) / abs(n1)
 
 
 def _ratios_block(result: ScoringAnalysisResult, record: StoredDossierRecord | None = None) -> dict[str, Any]:
@@ -321,9 +375,16 @@ def _ratios_block(result: ScoringAnalysisResult, record: StoredDossierRecord | N
             "reason": extra.get("reason"),
         }
 
+    n1_ratios = _ratios_n1(result)
+    inp = result.ratio_inputs
+    amount_fallbacks = {
+        "caf_montant": montant_bilan(inp.get("caf"), negative_bad=True),
+        "fonds_de_roulement": montant_bilan(inp.get("fdr"), negative_bad=True),
+        "besoin_en_fonds_roulement": montant_bilan(inp.get("bfr"), negative_bad=False),
+    }
     conform = watch = 0
     for key, meta in RATIO_METADATA.items():
-        raw = ratios.get(key)
+        raw = ratios.get(key) or amount_fallbacks.get(key)
         if raw is None:
             continue
         status_fr = raw.get("status") or "Non calculable"
@@ -335,18 +396,20 @@ def _ratios_block(result: ScoringAnalysisResult, record: StoredDossierRecord | N
         elif status_fr == "À surveiller":
             watch += 1
         value = raw.get("value")
+        n1_value = (n1_ratios.get(key) or {}).get("value")
         items.append({
             "label": meta["label"],
             "formula": meta["formula"],
             "threshold": meta["threshold"],
             "value": _fmt_ratio(key, value),
+            "n1": _fmt_ratio(key, n1_value),
+            "variation": _variation(value, n1_value),
             "status": ui,
             "barPct": _bar_pct(key, value, status_fr),
             "interpretation": raw.get("reason")
             or f"Statut {status_fr.lower()} au regard du seuil {meta['threshold']}.",
         })
 
-    inp = result.ratio_inputs
     years = result.years
     year_n = years.labels[2] if years.labels else "N"
     fiscal = [
@@ -979,6 +1042,8 @@ def _financial_statements(result: ScoringAnalysisResult) -> dict[str, Any]:
         "derive": ("Soldes intermédiaires", []),
     }
     for field in result.fields:
+        if field.code in {"FDR", "BFR"}:
+            continue
         src = (field.source or "").lower()
         if "actif" in src:
             bucket = "actif"

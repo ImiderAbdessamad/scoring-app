@@ -25,16 +25,31 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: 'BAD', label: 'Non conformes' },
 ]
 
-/* Colonnes communes à l'en-tête et aux lignes : ratio | jauge | valeur | statut | ▾ */
-const ROW_GRID = 'sm:grid sm:grid-cols-[minmax(0,1fr)_120px_96px_120px_28px] sm:items-center sm:gap-4'
+/* Colonnes : ratio | N-1 | N | variation | statut | ▾ */
+const ROW_GRID = 'sm:grid sm:grid-cols-[minmax(0,1.4fr)_minmax(88px,1fr)_minmax(88px,1fr)_minmax(88px,1fr)_120px_28px] sm:items-center sm:gap-3'
 
 type Props = {
   ratios: RatiosBlock
+  yearLabels?: string[]
   openIndex: number | null
   onToggle: (index: number) => void
 }
 
-export function RatiosTab({ ratios, openIndex, onToggle }: Props) {
+function formatVariation(delta?: number | null) {
+  if (delta == null) return null
+  return (
+    <span
+      className={`rounded-[8px] px-2 py-0.5 text-[11.5px] font-semibold tabular-nums ${
+        delta >= 0 ? 'bg-[#ECFDF5] text-[#15803D]' : 'bg-[#FEF2F2] text-[#B91C1C]'
+      }`}
+    >
+      {delta > 0 ? '+' : delta < 0 ? '−' : ''}
+      {Math.abs(delta * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %
+    </span>
+  )
+}
+
+export function RatiosTab({ ratios, yearLabels, openIndex, onToggle }: Props) {
   const [filter, setFilter] = useState<Filter>('ALL')
   const counts: Record<Filter, number> = {
     ALL: ratios.items.length,
@@ -43,6 +58,8 @@ export function RatiosTab({ ratios, openIndex, onToggle }: Props) {
     BAD: ratios.items.filter((r) => r.status === 'BAD').length,
   }
   // L'index d'origine est conservé : l'ouverture d'un ratio reste pilotée par la page.
+  const n1 = yearLabels?.[1] || 'N-1'
+  const n = yearLabels?.[2] || 'N'
   const visible = ratios.items
     .map((ratio, index) => ({ ratio, index }))
     .filter(({ ratio }) => filter === 'ALL' || ratio.status === filter)
@@ -119,8 +136,9 @@ export function RatiosTab({ ratios, openIndex, onToggle }: Props) {
         <Card delay={0.1} className="overflow-hidden p-0">
           <div className={`hidden border-b border-wb-line bg-[#F8FAFC] px-6 py-3 text-[11px] font-bold uppercase tracking-[0.04em] text-wb-muted ${ROW_GRID}`}>
             <span>Ratio · formule · seuil</span>
-            <span />
-            <span className="text-right">Valeur</span>
+            <span className="text-right">{n1}</span>
+            <span className="text-right">{n}</span>
+            <span className="text-right">Variation</span>
             <span>Statut</span>
             <span />
           </div>
@@ -129,7 +147,7 @@ export function RatiosTab({ ratios, openIndex, onToggle }: Props) {
             <div className="px-6 py-8 text-center text-[13px] text-wb-muted">Aucun ratio dans cette catégorie.</div>
           )}
 
-          {visible.map(({ ratio, index }, position) => {
+          {visible.map(({ ratio, index }) => {
             const style = STATUS_STYLE[ratio.status]
             const open = openIndex === index
             return (
@@ -147,20 +165,13 @@ export function RatiosTab({ ratios, openIndex, onToggle }: Props) {
                       {ratio.threshold ? ` · ${ratio.threshold}` : ''}
                     </div>
                   </div>
-                  <div className="hidden sm:block">
-                    <div className="h-2 overflow-hidden rounded-full bg-[#EEF0F3]">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${ratio.barPct}%` }}
-                        transition={{ duration: 0.5, delay: 0.04 * position }}
-                        className="h-full rounded-full"
-                        style={{ background: style.bar }}
-                      />
-                    </div>
-                  </div>
+                  <span className="hidden text-right font-mono text-[13px] tabular-nums text-wb-muted sm:block">
+                    {ratio.n1 || '—'}
+                  </span>
                   <span className="flex-none text-right font-mono text-[14px] font-bold tabular-nums text-[#1C1B1B]">
                     {ratio.value}
                   </span>
+                  <span className="hidden text-right sm:block">{formatVariation(ratio.variation) ?? <span className="text-wb-faint">—</span>}</span>
                   <span>
                     <span
                       className="inline-flex whitespace-nowrap rounded-[8px] px-2 py-0.5 text-[11.5px] font-semibold"

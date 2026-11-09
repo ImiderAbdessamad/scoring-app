@@ -274,6 +274,24 @@ const RATIO_DEFS: RatioDef[] = [
     ],
   },
   {
+    label: 'Fonds de roulement',
+    formula: '(Fonds propres + dettes MLT) − actifs immobilisés',
+    tiers: [
+      { value: '−80 KDH', interpretation: 'Fonds de roulement négatif.', barPct: 18 },
+      { value: '120 KDH', interpretation: 'Fonds de roulement positif.', barPct: 50 },
+      { value: '340 KDH', interpretation: 'Fonds de roulement confortable.', barPct: 83 },
+    ],
+  },
+  {
+    label: 'Besoin en fonds de roulement',
+    formula: 'Actif circulant − passif circulant',
+    tiers: [
+      { value: '210 KDH', interpretation: 'BFR capté du bilan.', barPct: 40 },
+      { value: '155 KDH', interpretation: 'BFR capté du bilan.', barPct: 55 },
+      { value: '90 KDH', interpretation: 'BFR capté du bilan.', barPct: 70 },
+    ],
+  },
+  {
     label: 'Fonds de roulement / BFR',
     formula: 'Fonds de roulement net / BFR',
     tiers: [
@@ -284,6 +302,15 @@ const RATIO_DEFS: RatioDef[] = [
   },
   {
     label: "Capacité d'autofinancement",
+    formula: 'Montant capté du bilan',
+    tiers: [
+      { value: '48 KDH', interpretation: "CAF limitée, captée du bilan.", barPct: 22 },
+      { value: '186 KDH', interpretation: 'CAF correcte pour soutenir l’activité.', barPct: 53 },
+      { value: '410 KDH', interpretation: "Bonne capacité d'autofinancement.", barPct: 85 },
+    ],
+  },
+  {
+    label: "Capacité d'autofinancement / CA",
     formula: 'CAF / Chiffre d’affaires',
     tiers: [
       { value: '3,1%', interpretation: "CAF limitée, capacité d'investissement réduite.", barPct: 22 },

@@ -15,7 +15,6 @@ import { RatiosTab } from '@/features/analyse/components/tabs/RatiosTab'
 import { FactorielleTab } from '@/features/analyse/components/tabs/FactorielleTab'
 import { ComportementTab as BankingBehaviorTab } from '@/features/analyse/components/tabs/ComportementTab'
 import { SectorAnalysisTab } from '@/features/analyse/components/tabs/SectorAnalysisTab'
-import { FiscalTab } from '@/features/analyse/components/tabs/FiscalTab'
 import { CapitalTab } from '@/features/analyse/components/tabs/CapitalTab'
 import { EtatsTab /* , QualityTab */ } from '@/features/analyse/components/tabs/QualityEtatsTabs'
 
@@ -122,9 +121,6 @@ export function AnalysePage() {
                       yearLabels={workspace.data.yearLabels}
                     />
                   )}
-                  {workspace.tab === 'fiscal' && (
-                    <FiscalTab fiscal={workspace.data.fiscalAnalysis} />
-                  )}
                   {workspace.tab === 'capital' && (
                     <CapitalTab capital={workspace.data.capitalAnalysis} />
                   )}
@@ -137,6 +133,7 @@ export function AnalysePage() {
                   {workspace.tab === 'ratios' && (
                     <RatiosTab
                       ratios={workspace.data.ratios}
+                      yearLabels={workspace.data.yearLabels}
                       openIndex={workspace.openKpi}
                       onToggle={workspace.toggleKpi}
                     />
