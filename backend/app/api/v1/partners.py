@@ -16,7 +16,7 @@ from app.services.pvc_partner import (
     partner_poll_path,
 )
 
-router = APIRouter(prefix="/partners/pvc", tags=["partenaire PVC"])
+router = APIRouter(prefix="/partners/pvc", tags=["Partenaire PVC"])
 
 
 def require_pvc_api_key(

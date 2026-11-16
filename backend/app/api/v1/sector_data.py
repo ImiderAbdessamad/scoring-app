@@ -7,7 +7,7 @@ from app.services.sector_analysis_service import sector_analysis_service
 from app.services.sector_sync_service import schedule_background_refresh, sector_sync_service
 from app.services import dossier_store
 
-router = APIRouter(prefix="/sector-data", tags=["sector-data"])
+router = APIRouter(prefix="/sector-data", tags=["Données sectorielles"])
 
 
 @router.get("/status")
@@ -30,7 +30,7 @@ async def sector_data_sync_one(dataset_id: str) -> dict:
     return await sector_sync_service.sync_dataset(dataset_id)
 
 
-dossier_sector_router = APIRouter(tags=["dossiers"])
+dossier_sector_router = APIRouter(tags=["Dossiers"])
 
 
 @dossier_sector_router.get("/dossiers/{dossier_id}/sector-analysis")

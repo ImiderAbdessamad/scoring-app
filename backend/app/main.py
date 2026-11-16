@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.openapi import API_DESCRIPTION, API_TITLE, API_VERSION, OPENAPI_TAGS, apply_security_schemes
 from app.services import minio_storage
 
 logging.basicConfig(level=logging.INFO)
@@ -67,11 +68,46 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Wafabail Smart Dashboard API",
-    version="0.2.0",
-    description="API crédit-bail — dashboard & dossiers",
+    title=API_TITLE,
+    version=API_VERSION,
+    description=API_DESCRIPTION,
+    openapi_tags=OPENAPI_TAGS,
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    swagger_ui_parameters={
+        "docExpansion": "list",
+        "filter": True,
+        "displayRequestDuration": True,
+        "persistAuthorization": True,
+        "tryItOutEnabled": True,
+        "deepLinking": True,
+        "defaultModelsExpandDepth": 1,
+        "defaultModelExpandDepth": 2,
+        "tagsSorter": "alpha",
+        "operationsSorter": "alpha",
+    },
     lifespan=lifespan,
 )
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=OPENAPI_TAGS,
+    )
+    app.openapi_schema = apply_security_schemes(schema)
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
@@ -85,14 +121,16 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api/v1")
 
 
-@app.get("/health")
-@app.get("/health/live")
+@app.get("/health", tags=["Santé"], summary="Santé (alias live)")
+@app.get("/health/live", tags=["Santé"], summary="Liveness")
 def health_live():
+    """Le processus HTTP répond. Utilisé par les probes Kubernetes."""
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
+@app.get("/health/ready", tags=["Santé"], summary="Readiness")
 def health_ready():
+    """SQLite, stockage et Kafka : `ready` ou `degraded`."""
     from app.core.config import settings
     from app.db.session import sync_engine
     from sqlalchemy import text

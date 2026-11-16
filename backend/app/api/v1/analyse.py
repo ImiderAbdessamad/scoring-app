@@ -28,7 +28,7 @@ from app.services.workspace_builder import build_workspace, empty_workspace, ove
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["analyse scoring"])
+router = APIRouter(tags=["Analyse scoring"])
 
 _PIPELINE_LOCK = asyncio.Lock()
 

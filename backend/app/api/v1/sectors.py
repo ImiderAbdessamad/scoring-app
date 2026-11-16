@@ -20,8 +20,8 @@ from app.services import sector_source_config
 from app.services.sector_analysis_service import sector_analysis_service
 from app.services.sector_refresh_service import sector_sync_service
 
-router = APIRouter(prefix="/sectors", tags=["sectors"])
-dossier_router = APIRouter(tags=["dossiers"])
+router = APIRouter(prefix="/sectors", tags=["Secteurs"])
+dossier_router = APIRouter(tags=["Dossiers"])
 
 
 class RefreshBody(BaseModel):

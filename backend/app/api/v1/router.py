@@ -7,8 +7,8 @@ from app.core.security import get_current_user, get_scoring_user
 scoring_auth = [Depends(get_scoring_user)]
 
 api_router = APIRouter()
-api_router.include_router(dashboard.router, tags=["dashboard"], dependencies=scoring_auth)
-api_router.include_router(dossiers.router, tags=["dossiers"], dependencies=scoring_auth)
+api_router.include_router(dashboard.router, tags=["Tableau de bord"], dependencies=scoring_auth)
+api_router.include_router(dossiers.router, tags=["Dossiers"], dependencies=scoring_auth)
 api_router.include_router(analyse.router, dependencies=scoring_auth)
 # Partenaire PVC (pv-manager) : clé API, hors Keycloak.
 api_router.include_router(partners.router)
