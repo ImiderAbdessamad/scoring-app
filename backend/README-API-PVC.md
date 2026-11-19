@@ -17,13 +17,13 @@ Toutes les routes `/api/v1/partners/pvc/*` exigent une clé.
 |---|---|
 | Variable d’environnement | `PVC_API_KEY` |
 | Fichier | `WFB/backend/.env` |
-| Valeur fournie | `wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61` |
-| En-tête | `X-API-Key: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61` |
+| Valeur | non publiée : voir `PVC_API_KEY` dans `backend/.env` (jamais commité) |
+| En-tête | `X-API-Key: <PVC_API_KEY>` |
 
 Équivalent accepté :
 
 ```http
-Authorization: Bearer wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61
+Authorization: Bearer <PVC_API_KEY>
 ```
 
 Sans clé → `401`. Clé absente du serveur → `503`.
@@ -184,7 +184,7 @@ Le JSON PVC complet est renvoyé dans `dossier` du GET.
 
 ```powershell
 curl.exe -X POST http://127.0.0.1:8000/api/v1/partners/pvc/dossiers `
-  -H "X-API-Key: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61" `
+  -H "X-API-Key: <PVC_API_KEY>" `
   -F "data=@dossier-pvc.json;type=application/json" `
   -F "liasse=@C:\chemin\liasse-2025.pdf;type=application/pdf"
 ```
@@ -193,7 +193,7 @@ Avec une deuxième liasse (exercice N-2) :
 
 ```powershell
 curl.exe -X POST http://127.0.0.1:8000/api/v1/partners/pvc/dossiers `
-  -H "X-API-Key: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61" `
+  -H "X-API-Key: <PVC_API_KEY>" `
   -F "data=@dossier-pvc.json;type=application/json" `
   -F "liasse=@liasse-2025.pdf;type=application/pdf" `
   -F "liasses=@liasse-2023.pdf;type=application/pdf"
@@ -231,7 +231,7 @@ C’est l’API à appeler **en boucle** (toutes les 10–30 s) jusqu’à `anal
 
 ```powershell
 curl.exe http://127.0.0.1:8000/api/v1/partners/pvc/dossiers/DEM-2026-00412 `
-  -H "X-API-Key: wfb_pvc_8f2c1a9d4e6b70c3a5d18e4f9b2c7a61"
+  -H "X-API-Key: <PVC_API_KEY>"
 ```
 
 ### États (`analyseStatus`)
