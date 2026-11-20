@@ -1,3 +1,4 @@
+# Fichier de l'ancien dépôt unique scoring-app (backend/ et frontend/ côte à côte), à adapter.
 # Contexte = racine WFB (extracteur V6 + backend + frontend).
 # RCC optionnel : docker compose --profile rcc up --build
 name: wafabail

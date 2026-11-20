@@ -1,0 +1,13 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Configuration locale et données
+.env
+/data/
+*.log
+*.traineddata
+
+
